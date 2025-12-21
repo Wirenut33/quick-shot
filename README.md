@@ -28,9 +28,14 @@ A lightweight macOS menu bar app for quick screenshots.
    open QuickShot.xcodeproj
    ```
 
-3. Build and run the project (⌘R)
+3. Disable App Sandbox (required for screenshot functionality):
+   - Select the project in Xcode
+   - Go to **Signing & Capabilities** tab
+   - Remove or disable **App Sandbox**
 
-4. Grant screen recording permission when prompted (required for screenshot functionality)
+4. Build and run the project (⌘R)
+
+5. Grant screen recording permission when prompted (required for screenshot functionality)
 
 ## Usage
 
