@@ -53,6 +53,10 @@ QuickShot requires **Screen Recording** permission to function. macOS will promp
 
 **System Settings > Privacy & Security > Screen Recording > QuickShot**
 
+## Author
+
+Michael Morale
+
 ## License
 
 MIT License
