@@ -9,6 +9,7 @@ class StatusBarController: NSObject {
     private var statusItem: NSStatusItem
     private var screenshotManager = ScreenshotManager()
     private var copyPathToggle: NSMenuItem!
+    private var annotateToggle: NSMenuItem!
     private var saveLocationItem: NSMenuItem!
 
     override init() {
@@ -41,6 +42,11 @@ class StatusBarController: NSObject {
 
         menu.addItem(NSMenuItem.separator())
 
+        annotateToggle = NSMenuItem(title: "Annotate After Capture", action: #selector(toggleAnnotateMode), keyEquivalent: "")
+        annotateToggle.target = self
+        annotateToggle.state = screenshotManager.annotateMode ? .on : .off
+        menu.addItem(annotateToggle)
+
         copyPathToggle = NSMenuItem(title: "Save to Folder & Copy Path", action: #selector(toggleCopyPathMode), keyEquivalent: "")
         copyPathToggle.target = self
         copyPathToggle.state = screenshotManager.copyPathMode ? .on : .off
@@ -57,6 +63,12 @@ class StatusBarController: NSObject {
         menu.addItem(quitItem)
 
         return menu
+    }
+
+    @objc private func toggleAnnotateMode() {
+        let newValue = !screenshotManager.annotateMode
+        screenshotManager.annotateMode = newValue
+        annotateToggle.state = newValue ? .on : .off
     }
 
     @objc private func toggleCopyPathMode() {

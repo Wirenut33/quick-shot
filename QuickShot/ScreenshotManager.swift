@@ -7,13 +7,34 @@ import AppKit
 
 class ScreenshotManager {
 
+    enum CaptureKind {
+        case fullScreen, selection, window
+
+        fileprivate var arguments: [String] {
+            switch self {
+            case .fullScreen: return []
+            case .selection: return ["-s"]
+            case .window: return ["-w"]
+            }
+        }
+    }
+
     private static let copyPathModeKey = "copyPathMode"
+    private static let annotateModeKey = "annotateMode"
     private static let saveLocationKey = "saveLocation"
 
     var copyPathMode: Bool {
         get { UserDefaults.standard.bool(forKey: Self.copyPathModeKey) }
         set {
             UserDefaults.standard.set(newValue, forKey: Self.copyPathModeKey)
+            UserDefaults.standard.synchronize()
+        }
+    }
+
+    var annotateMode: Bool {
+        get { UserDefaults.standard.bool(forKey: Self.annotateModeKey) }
+        set {
+            UserDefaults.standard.set(newValue, forKey: Self.annotateModeKey)
             UserDefaults.standard.synchronize()
         }
     }
@@ -64,59 +85,85 @@ class ScreenshotManager {
     }
 
     func captureFullScreen() {
-        guard requestScreenRecordingPermissionIfNeeded() else { return }
-        let task = Process()
-        task.launchPath = "/usr/sbin/screencapture"
-
-        if copyPathMode {
-            let path = generateFilePath()
-            task.arguments = ["-x", path]
-            task.terminationHandler = { [weak self] _ in
-                if FileManager.default.fileExists(atPath: path) {
-                    self?.copyPathToClipboard(path)
-                }
-            }
-        } else {
-            task.arguments = ["-c", "-x"]
-        }
-        task.launch()
+        capture(.fullScreen)
     }
 
     func captureSelection() {
-        guard requestScreenRecordingPermissionIfNeeded() else { return }
-        let task = Process()
-        task.launchPath = "/usr/sbin/screencapture"
-
-        if copyPathMode {
-            let path = generateFilePath()
-            task.arguments = ["-x", "-s", path]
-            task.terminationHandler = { [weak self] _ in
-                if FileManager.default.fileExists(atPath: path) {
-                    self?.copyPathToClipboard(path)
-                }
-            }
-        } else {
-            task.arguments = ["-c", "-x", "-s"]
-        }
-        task.launch()
+        capture(.selection)
     }
 
     func captureWindow() {
-        guard requestScreenRecordingPermissionIfNeeded() else { return }
-        let task = Process()
-        task.launchPath = "/usr/sbin/screencapture"
+        capture(.window)
+    }
 
-        if copyPathMode {
+    func capture(_ kind: CaptureKind) {
+        guard requestScreenRecordingPermissionIfNeeded() else { return }
+
+        if annotateMode {
+            captureForAnnotation(kind)
+        } else if copyPathMode {
             let path = generateFilePath()
-            task.arguments = ["-x", "-w", path]
-            task.terminationHandler = { [weak self] _ in
+            runScreencapture(["-x"] + kind.arguments + [path]) { [weak self] in
                 if FileManager.default.fileExists(atPath: path) {
                     self?.copyPathToClipboard(path)
                 }
             }
         } else {
-            task.arguments = ["-c", "-x", "-w"]
+            runScreencapture(["-c", "-x"] + kind.arguments)
         }
-        task.launch()
+    }
+
+    private func captureForAnnotation(_ kind: CaptureKind) {
+        let tempPath = NSTemporaryDirectory() + "QuickShot-\(UUID().uuidString).png"
+        runScreencapture(["-x"] + kind.arguments + [tempPath]) { [weak self] in
+            // No file means the user cancelled the capture (e.g. pressed Escape).
+            guard let image = NSImage(contentsOfFile: tempPath) else { return }
+            try? FileManager.default.removeItem(atPath: tempPath)
+
+            DispatchQueue.main.async {
+                guard let self else { return }
+                let title = self.copyPathMode ? "Save & Copy Path" : "Copy to Clipboard"
+                AnnotationWindowController.shared.present(image: image, finishTitle: title) { [weak self] edited in
+                    self?.deliver(edited)
+                }
+            }
+        }
+    }
+
+    /// Hands a finished (annotated) image off the same way a plain capture would:
+    /// to the clipboard, or saved to the chosen folder with its path copied.
+    private func deliver(_ image: NSImage) {
+        guard let png = AnnotationExporter.pngData(from: image) else { return }
+
+        if copyPathMode {
+            let path = generateFilePath()
+            do {
+                try png.write(to: URL(fileURLWithPath: path))
+                copyPathToClipboard(path)
+            } catch {
+                NSLog("QuickShot: failed to save annotated screenshot: \(error)")
+            }
+        } else {
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            pasteboard.setData(png, forType: .png)
+            if let tiff = image.tiffRepresentation {
+                pasteboard.setData(tiff, forType: .tiff)
+            }
+        }
+    }
+
+    private func runScreencapture(_ arguments: [String], completion: (() -> Void)? = nil) {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+        task.arguments = arguments
+        if let completion {
+            task.terminationHandler = { _ in completion() }
+        }
+        do {
+            try task.run()
+        } catch {
+            NSLog("QuickShot: failed to launch screencapture: \(error)")
+        }
     }
 }
