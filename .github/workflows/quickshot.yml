@@ -85,7 +85,7 @@ jobs:
           if [[ -z "$draft" ]]; then
             gh release create "$TAG" --target "$GITHUB_SHA" --draft --title "QuickShot $VERSION" --generate-notes
           fi
-          gh release upload "$TAG" ".build/releases/$TAG/QuickShot-$VERSION.zip" ".build/releases/$TAG/appcast.xml" ".build/releases/$TAG/SHA256SUMS.txt" --clobber
+          gh release upload "$TAG" ".build/releases/$TAG/QuickShot-$VERSION.zip" ".build/releases/$TAG/QuickShot.zip" ".build/releases/$TAG/appcast.xml" ".build/releases/$TAG/SHA256SUMS.txt" --clobber
           gh release edit "$TAG" --draft=false --latest
       - name: Delete temporary signing keychain
         if: always()
