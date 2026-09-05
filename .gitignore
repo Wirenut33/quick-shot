@@ -1,7 +1,10 @@
-# macOS
 .DS_Store
-
-# Xcode user state
-xcuserdata/
-*.xcuserstate
+.build/
+.backups/
 DerivedData/
+*.xcuserstate
+xcuserdata/
+
+__pycache__/
+*.p12
+*.p8
