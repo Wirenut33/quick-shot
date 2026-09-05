@@ -92,6 +92,6 @@ Run tests with normal macOS pasteboard access. The tests use a private pasteboar
 
 ## Automatic updates (1.4+)
 
-QuickShot checks for signed updates hourly, downloads them automatically, and installs when captures and annotation work are finished. **Automatic Updates** and **Check for Updates…** are available in the camera menu. A merge to `main` triggers tests and a signed universal release for Apple Silicon and Intel Macs.
+QuickShot checks for signed updates hourly, downloads them automatically, and installs when captures and annotation work are finished. **Automatic Updates** and **Check for Updates…** are available in the camera menu. **Check for Updates…** is also in the QuickShot application menu and Settings, where the installed version is shown. A merge to `main` triggers tests and a signed universal release for Apple Silicon and Intel Macs.
 
 The first rollout needs the one-time bootstrap install and GitHub signing-secret setup. See [Automatic updates](docs/AUTOMATIC_UPDATES.md) for setup, verification, and recovery.
