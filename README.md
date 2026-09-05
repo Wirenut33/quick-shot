@@ -95,3 +95,13 @@ Run tests with normal macOS pasteboard access. The tests use a private pasteboar
 QuickShot checks for signed updates hourly, downloads them automatically, and installs when captures and annotation work are finished. **Automatic Updates** and **Check for Updates…** are available in the camera menu. **Check for Updates…** is also in the QuickShot application menu and Settings, where the installed version is shown. A merge to `main` triggers tests and a signed universal release for Apple Silicon and Intel Macs.
 
 The first rollout needs the one-time bootstrap install and GitHub signing-secret setup. See [Automatic updates](docs/AUTOMATIC_UPDATES.md) for setup, verification, and recovery.
+
+## Editing annotations
+
+- Draw a Rectangle, Arrow, Highlight, or Text label. New marks become selected automatically.
+- Use Select to choose an existing mark. Drag it to move it; drag rectangle/highlight corners to resize. Text corner handles resize the font.
+- Select an arrow and drag either endpoint to reposition it, or its middle handle to bend the curve.
+- Set Color, Stroke (Thin/Medium/Thick), or Dashed for new or selected shapes. Text supports size 12–144 and Bold; use Apply Text to change a selected label.
+- Highlight draws a translucent colored area (yellow by default), preserving the content beneath it.
+- Undo/Redo cover drawing, moving, resizing, bending, styling, text edits, deletion, and Clear. Delete removes the selected mark; Escape deselects it when the canvas has focus.
+- Copy, PNG export, and Add to Collection include the final styling, without selection handles.
