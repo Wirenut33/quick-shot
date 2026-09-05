@@ -15,5 +15,11 @@ struct QuickShotApp: App {
         Settings {
             SettingsView()
         }
+        .commands {
+            CommandGroup(after: .appInfo) {
+                CheckForUpdatesButton()
+                Divider()
+            }
+        }
     }
 }
