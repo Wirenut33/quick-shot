@@ -39,4 +39,6 @@ else
   "$tools/sign_update" --account quickshot-updates --verify "$archive" "$signature"
 fi
 python3 scripts/verify_release.py "$app" "$out/appcast.xml" "$archive" "$RELEASE_VERSION" "$RELEASE_BUILD" "$RELEASE_TAG"
-(cd "$out" && shasum -a 256 "QuickShot-$RELEASE_VERSION.zip" > SHA256SUMS.txt)
+# Keep the website URL stable without changing Sparkle's immutable enclosure URL.
+cp "$archive" "$out/QuickShot.zip"
+(cd "$out" && shasum -a 256 "QuickShot-$RELEASE_VERSION.zip" QuickShot.zip > SHA256SUMS.txt)
