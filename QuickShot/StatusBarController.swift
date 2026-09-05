@@ -261,7 +261,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     func captureForTesting(_ mode: CaptureMode) {
-        capture(mode, forceAnnotation: true)
+        capture(mode)
     }
 
     func openEditorForTesting() {
@@ -282,7 +282,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         openEditor(for: image)
     }
 
-    private func capture(_ mode: CaptureMode, forceAnnotation: Bool = false) {
+    private func capture(_ mode: CaptureMode) {
         guard !isCapturing else { return }
         isCapturing = true
         captureItems.forEach { $0.isEnabled = false }
@@ -296,15 +296,16 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
                 switch result {
                 case .success(let image):
-                    if self.collectMode && !forceAnnotation {
+                    // An enabled annotation preference must also apply in collection mode.
+                    if self.screenshotManager.annotateMode {
+                        self.openEditor(for: image)
+                    } else if self.collectMode {
                         if self.collection.add(image) {
                             self.setStatusIcon(symbolName: "photo.stack", description: "Snapshot saved to collection")
                             self.statusItem.button?.toolTip = self.collection.message
                         } else {
                             self.showAlert(title: "Save Failed", message: self.collection.message)
                         }
-                    } else if forceAnnotation || self.screenshotManager.annotateMode {
-                        self.openEditor(for: image)
                     } else if self.screenshotManager.copyToClipboard(image) {
                         self.showCopyConfirmation()
                     } else {

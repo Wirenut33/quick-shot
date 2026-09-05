@@ -73,11 +73,11 @@ MIT License
 ## Collect several snapshots (1.3)
 
 1. Turn on **Collect Snapshots** in the camera menu. The count appears beside the camera.
-2. Use Capture Selection, Capture Window, or Capture Full Screen repeatedly. Each capture saves immediately without opening the editor or changing your clipboard.
+2. Use Capture Selection, Capture Window, or Capture Full Screen repeatedly. With **Annotate Before Copying** off, each capture saves immediately without opening the editor or changing your clipboard. With annotation on, mark up each capture and choose **Add to Collection**.
 3. Open **Snapshot Collection**, select the examples you want (⌘-click / Shift-click, or Select All), and choose **Copy Selected**.
 4. Switch to Codex or another app and press **⌘V**. QuickShot supplies separate PNG/file attachments. Apps decide how many clipboard items they accept; use **Copy as One Image** for a single combined image when needed. Large combined images are scaled to bounded dimensions.
 
-**Copy All Snapshots** is also available directly in the menu. Snapshots remain in `~/Library/Application Support/QuickShot/Snapshots` across restarts until you remove them (to Trash). **Show Folder** opens the PNG files in Finder for dragging or attaching. Turn off Collect Snapshots to return to your existing annotation/clipboard flow.
+**Copy All Snapshots** is also available directly in the menu. Snapshots remain in `~/Library/Application Support/QuickShot/Snapshots` across restarts until you remove them (to Trash). **Show Folder** opens the PNG files in Finder for dragging or attaching. When **Annotate Before Copying** is enabled, every capture opens the editor first; use **Add to Collection** to keep the marked-up version. Turn annotation off to collect captures immediately without opening the editor. With both options off, captures copy directly to the clipboard.
 
 Use **Annotate** in the collection to edit an example, then **Add to Collection** in the editor to save the annotated version as a new snapshot. The original remains available.
 
