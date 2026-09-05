@@ -26,7 +26,21 @@
 	<true/>
 	<key>NSHumanReadableCopyright</key>
 	<string></string>
-	<key>NSScreenCaptureUsageDescription</key>
+    <key>SUFeedURL</key>
+    <string>https://github.com/Wirenut33/quick-shot/releases/latest/download/appcast.xml</string>
+    <key>SUPublicEDKey</key>
+    <string>Q1/TD6JPGw6Er/WEapw7WIhOgkvFTbd9pywIQDvWmKw=</string>
+    <key>SUVerifyUpdateBeforeExtraction</key>
+    <true/>
+    <key>SURequireSignedFeed</key>
+    <true/>
+    <key>SUEnableAutomaticChecks</key>
+    <true/>
+    <key>SUAutomaticallyUpdate</key>
+    <true/>
+    <key>SUScheduledCheckInterval</key>
+    <integer>3600</integer>
+    <key>NSScreenCaptureUsageDescription</key>
 	<string>QuickShot captures screenshots that you choose so you can copy or annotate them.</string>
 </dict>
 </plist>

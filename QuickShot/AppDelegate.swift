@@ -17,6 +17,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             NSLog("QuickShot could not register as a login item: \(error.localizedDescription)")
         }
         statusBarController = StatusBarController()
+        AppUpdater.shared.canInstall = { [weak self] in
+            self?.statusBarController?.canInstallUpdate == true
+        }
+        if !ProcessInfo.processInfo.arguments.contains(where: { $0.hasSuffix("-test") || $0 == "--capture-full" }) {
+            AppUpdater.shared.start()
+        }
 
         // Hidden smoke-test hook used to validate the installed app's complete
         // capture-to-editor flow without relying on menu-bar coordinates.

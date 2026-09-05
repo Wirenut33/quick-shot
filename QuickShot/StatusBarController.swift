@@ -6,6 +6,7 @@
 import AppKit
 
 final class StatusBarController: NSObject, NSMenuDelegate {
+    var canInstallUpdate: Bool { !isCapturing && annotationWindows.isEmpty && NSApp.modalWindow == nil && !isMenuOpen }
     private let statusItem: NSStatusItem
     private let screenshotManager = ScreenshotManager()
     private let collection = SnapshotCollection()
@@ -14,6 +15,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private var collectionItem: NSMenuItem!
     private var copyCollectionItem: NSMenuItem!
     private var isCapturing = false
+    private var isMenuOpen = false
     private var collectMode: Bool {
         get { UserDefaults.standard.bool(forKey: "collectSnapshots") }
         set { UserDefaults.standard.set(newValue, forKey: "collectSnapshots") }
@@ -27,6 +29,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private var copyPathToggle: NSMenuItem!
     private var saveLocationItem: NSMenuItem!
     private var launchAtLoginItem: NSMenuItem!
+    private var updateItem: NSMenuItem!
+    private var automaticUpdateItem: NSMenuItem!
 
     override init() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -40,8 +44,11 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     func menuWillOpen(_ menu: NSMenu) {
+        isMenuOpen = true
         refreshMenuState()
     }
+
+    func menuDidClose(_ menu: NSMenu) { isMenuOpen = false }
 
     private func createMenu() -> NSMenu {
         let menu = NSMenu()
@@ -108,6 +115,11 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         menu.addItem(screenPermissionItem)
 
         menu.addItem(.separator())
+        updateItem = menuItem(title: "Check for Updates…", action: #selector(checkForUpdates))
+        menu.addItem(updateItem)
+        automaticUpdateItem = menuItem(title: "Automatic Updates", action: #selector(toggleAutomaticUpdates))
+        menu.addItem(automaticUpdateItem)
+        menu.addItem(.separator())
         menu.addItem(menuItem(title: "Quit QuickShot", action: #selector(quitApp), keyEquivalent: "q"))
 
         refreshMenuState()
@@ -125,6 +137,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     private func refreshMenuState() {
+        updateItem?.isEnabled = AppUpdater.shared.canCheckForUpdates
+        automaticUpdateItem?.state = AppUpdater.shared.automaticUpdates ? .on : .off
         collectionToggle?.state = collectMode ? .on : .off
         collectionItem?.title = "Snapshot Collection (\(collection.snapshots.count))…"
         copyCollectionItem?.isEnabled = !collection.snapshots.isEmpty
@@ -139,6 +153,13 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         launchAtLoginItem?.title = loginItemManager.requiresApproval
             ? "Launch at Login (Approval Required)"
             : "Launch at Login"
+    }
+
+    @objc private func checkForUpdates() { AppUpdater.shared.checkForUpdates() }
+
+    @objc private func toggleAutomaticUpdates() {
+        AppUpdater.shared.automaticUpdates.toggle()
+        refreshMenuState()
     }
 
     @objc private func toggleCollection() {

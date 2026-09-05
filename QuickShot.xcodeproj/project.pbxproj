@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+        A10000000000000000000001 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000002 /* Sparkle */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		C52D4C5E2EF836D800F06333 /* QuickShot.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = QuickShot.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -36,6 +40,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+                A10000000000000000000001 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -78,6 +83,7 @@
 			);
 			name = QuickShot;
 			packageProductDependencies = (
+                A10000000000000000000002 /* Sparkle */,
 			);
 			productName = QuickShot;
 			productReference = C52D4C5E2EF836D800F06333 /* QuickShot.app */;
@@ -108,6 +114,7 @@
 			mainGroup = C52D4C552EF836D800F06333;
 			minimizedProjectReferenceProxies = 1;
 			preferredProjectObjectVersion = 77;
+            packageReferences = (A10000000000000000000003 /* Sparkle */);
 			productRefGroup = C52D4C5F2EF836D800F06333 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -136,6 +143,21 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+        A10000000000000000000003 /* Sparkle */ = {
+            isa = XCRemoteSwiftPackageReference;
+            repositoryURL = "https://github.com/sparkle-project/Sparkle";
+            requirement = {kind = exactVersion; version = 2.9.6; };
+        };
+/* End XCRemoteSwiftPackageReference section */
+/* Begin XCSwiftPackageProductDependency section */
+        A10000000000000000000002 /* Sparkle */ = {
+            isa = XCSwiftPackageProductDependency;
+            package = A10000000000000000000003 /* Sparkle */;
+            productName = Sparkle;
+        };
+/* End XCSwiftPackageProductDependency section */
 
 /* Begin XCBuildConfiguration section */
 		C52D4C672EF836D900F06333 /* Debug */ = {
@@ -264,7 +286,7 @@
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -274,7 +296,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 1.3;
+				MARKETING_VERSION = 1.4;
 				PRODUCT_BUNDLE_IDENTIFIER = com.quickshot.QuickShot.Debug;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -296,7 +318,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = Z99799S9D8;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_PREVIEWS = YES;
@@ -307,7 +329,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 1.3;
+				MARKETING_VERSION = 1.4;
 				PRODUCT_BUNDLE_IDENTIFIER = com.quickshot.QuickShot;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;

@@ -1,0 +1,95 @@
+name: QuickShot
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: quickshot-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+jobs:
+  validate:
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Resolve pinned dependencies
+        run: xcodebuild -resolvePackageDependencies -project QuickShot.xcodeproj -scheme QuickShot -clonedSourcePackagesDirPath .build/SourcePackages
+      - name: Test and build both architectures
+        run: bash scripts/validate.sh
+  release:
+    needs: validate
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: macos-26
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Calculate deterministic versions
+        id: version
+        run: python3 scripts/release_metadata.py >> "$GITHUB_OUTPUT"
+      - name: Skip superseded commits and published reruns
+        id: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          current=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+          if [[ "$current" != "$GITHUB_SHA" ]]; then
+            echo 'ready=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Listing succeeds or the job fails; auth/network errors are not treated as a missing release.
+          published=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases" --jq ".[] | select(.tag_name == \"$TAG\" and .draft == false) | .tag_name")
+          if [[ -n "$published" ]]; then echo 'ready=false' >> "$GITHUB_OUTPUT"; else echo 'ready=true' >> "$GITHUB_OUTPUT"; fi
+      - name: Resolve pinned dependencies
+        if: steps.publish.outputs.ready == 'true'
+        run: xcodebuild -resolvePackageDependencies -project QuickShot.xcodeproj -scheme QuickShot -clonedSourcePackagesDirPath .build/SourcePackages
+      - name: Import signing certificate
+        if: steps.publish.outputs.ready == 'true'
+        env:
+          APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: bash scripts/import_ci_certificate.sh
+      - name: Build and sign release and update feed
+        if: steps.publish.outputs.ready == 'true'
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          RELEASE_BUILD: ${{ steps.version.outputs.build }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: bash scripts/release.sh
+      - name: Publish complete release atomically
+        if: steps.publish.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          current=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+          [[ "$current" == "$GITHUB_SHA" ]] || { echo 'Newer main exists; leaving current feed untouched.'; exit 0; }
+          # A failed upload leaves only a draft. Reruns can safely replace draft assets.
+          draft=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases" --jq ".[] | select(.tag_name == \"$TAG\" and .draft == true) | .tag_name")
+          if [[ -z "$draft" ]]; then
+            gh release create "$TAG" --target "$GITHUB_SHA" --draft --title "QuickShot $VERSION" --generate-notes
+          fi
+          gh release upload "$TAG" ".build/releases/$TAG/QuickShot-$VERSION.zip" ".build/releases/$TAG/appcast.xml" ".build/releases/$TAG/SHA256SUMS.txt" --clobber
+          gh release edit "$TAG" --draft=false --latest
+      - name: Delete temporary signing keychain
+        if: always()
+        run: |
+          if [[ -f "$RUNNER_TEMP/quickshot-signing.keychain-db" ]]; then
+            security delete-keychain "$RUNNER_TEMP/quickshot-signing.keychain-db"
+          fi

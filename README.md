@@ -89,3 +89,9 @@ xcrun swiftc -module-cache-path .build/SwiftModuleCache QuickShot/SnapshotCollec
 ```
 
 Run tests with normal macOS pasteboard access. The tests use a private pasteboard and temporary images. For installed-app capture validation, launch with `--collection-capture-test`; it captures the screen, verifies two persistent images and two private clipboard attachments, opens a diagnostic collection, and writes `QuickShot-collection-test.txt` in the app's temporary directory.
+
+## Automatic updates (1.4+)
+
+QuickShot checks for signed updates hourly, downloads them automatically, and installs when captures and annotation work are finished. **Automatic Updates** and **Check for Updates…** are available in the camera menu. A merge to `main` triggers tests and a signed universal release for Apple Silicon and Intel Macs.
+
+The first rollout needs the one-time bootstrap install and GitHub signing-secret setup. See [Automatic updates](docs/AUTOMATIC_UPDATES.md) for setup, verification, and recovery.
