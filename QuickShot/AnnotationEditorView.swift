@@ -16,6 +16,7 @@ struct AnnotationEditorView: View {
     var body: some View {
         VStack(spacing: 0) {
             toolBar
+            styleBar
             Divider()
 
             ScrollView([.horizontal, .vertical]) {
@@ -46,13 +47,7 @@ struct AnnotationEditorView: View {
                 }
             }
             .pickerStyle(.segmented)
-            .frame(width: 340)
-
-            if document.selectedTool == .text {
-                TextField("Text to place", text: $document.textDraft)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 220)
-            }
+            .frame(width: 440)
 
             Spacer()
 
@@ -61,8 +56,14 @@ struct AnnotationEditorView: View {
             } label: {
                 Label("Undo", systemImage: "arrow.uturn.backward")
             }
-            .disabled(document.annotations.isEmpty)
+            .disabled(!document.canUndo)
             .keyboardShortcut("z", modifiers: .command)
+
+            Button("Redo") { document.redo() }
+                .disabled(!document.canRedo)
+                .keyboardShortcut("z", modifiers: [.command, .shift])
+            Button("Delete") { document.deleteSelected() }
+                .disabled(document.selectedMark == nil)
 
             Button {
                 document.clear()
@@ -79,6 +80,61 @@ struct AnnotationEditorView: View {
             .disabled(document.canvasPadding >= 360)
         }
         .padding(14)
+    }
+
+    private func styleBinding<Value>(_ key: WritableKeyPath<AnnotationStyle, Value>) -> Binding<Value> {
+        Binding(get: { document.style[keyPath: key] }, set: { value in
+            var style = document.style; style[keyPath: key] = value; document.applyStyle(style)
+        })
+    }
+
+    private var editingText: Bool {
+        if document.selectedTool == .text { return true }
+        if case .text = document.selectedMark?.kind { return true }
+        return false
+    }
+
+    private var strokeApplicable: Bool {
+        !editingText && document.selectedTool != .highlight && document.selectedMark?.kind != .highlight
+    }
+
+    private var styleBar: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 16) {
+                Picker("Color", selection: styleBinding(\.color)) {
+                    ForEach(AnnotationColor.allCases) { color in Text(color.rawValue).tag(color) }
+                }.frame(width: 150)
+                Picker("Stroke", selection: styleBinding(\.width)) {
+                    Text("Thin").tag(CGFloat(3)); Text("Medium").tag(CGFloat(6)); Text("Thick").tag(CGFloat(12))
+                }.frame(width: 180).disabled(!strokeApplicable)
+                Toggle("Dashed", isOn: styleBinding(\.dashed))
+                    .disabled(!strokeApplicable)
+                Spacer()
+                Text(document.selectedMark == nil ? "Style for new marks" : "Style for selected mark")
+                    .foregroundStyle(.secondary)
+            }
+            if editingText {
+                HStack {
+                    TextField("Text to place", text: $document.textDraft)
+                        .textFieldStyle(.roundedBorder)
+                    Stepper("Size \(Int(document.style.fontSize))", value: styleBinding(\.fontSize), in: 12...144, step: 4)
+                        .frame(width: 150)
+                    Toggle("Bold", isOn: styleBinding(\.bold))
+                    if document.selectedMark != nil {
+                        Button("Apply Text") { document.updateText() }
+                    }
+                }
+            }
+            Text("Select a mark to move it. Drag corner handles to resize; drag an arrow’s middle handle to curve it.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 14).padding(.bottom, 10)
+        .onChange(of: document.selectedTool) { _, tool in
+            if tool != .select {
+                document.select(nil)
+                if tool == .highlight { var style = document.style; style.color = .yellow; document.applyStyle(style) }
+            }
+        }
     }
 
     private var descriptionArea: some View {
