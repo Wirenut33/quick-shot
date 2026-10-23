@@ -78,8 +78,7 @@ final class AnnotationCanvasNSView: NSView {
 
     private func handles(for mark: AnnotationMark) -> [CGPoint] {
         switch mark.kind {
-        case .arrow: return [mark.start, mark.midpoint, mark.end]
-        case .line: return [mark.start, mark.end]
+        case .arrow, .line: return [mark.start, mark.midpoint, mark.end]
         case .polyline: return mark.points
         default: break
         }
@@ -149,7 +148,8 @@ final class AnnotationCanvasNSView: NSView {
                     default: mark.end = point
                     }
                 case .line:
-                    if handle == 0 { mark.start = point } else { mark.end = point }
+                    if handle == 1 { mark.bend = mark.lineBend(for: point, tolerance: 8 / displayScale) }
+                    else { mark.moveLineEnd(handle, to: point) }
                 case .polyline:
                     mark.points[handle] = point
                 default:

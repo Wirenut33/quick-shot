@@ -127,7 +127,7 @@ struct AnnotationEditorView: View {
             }
             Text(document.selectedTool == .polyline
                  ? "Click to add points, or drag to lay down a segment. Double-click or press Return to finish; Delete removes the last point."
-                 : "Select a mark to move it. Drag corner handles to resize; drag an arrow’s middle handle to curve it, or a line’s points to reshape it.")
+                 : "Select a mark to move it. Drag corner handles to resize; drag the middle dot of an arrow or line to curve it, or a polyline’s points to reshape it.")
                 .font(.caption).foregroundStyle(.secondary)
         }
         .padding(.horizontal, 14).padding(.bottom, 10)
