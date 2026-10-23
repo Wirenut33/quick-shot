@@ -57,8 +57,9 @@ struct AnnotationMark: Equatable, Identifiable {
     var points: [CGPoint] = [] {
         didSet { if let first = points.first, let last = points.last { start = first; end = last } }
     }
-    // The point on the curve at t = 0.5, so dragging the middle handle
-    // follows the pointer exactly, instead of moving an invisible control point.
+    // A point the curve passes through, so dragging the middle handle follows the pointer
+    // exactly instead of moving an invisible control point. Arrows pass through it at t = 0.5;
+    // lines anywhere along their length (see lineCurves).
     var bend: CGPoint? = nil
     var midpoint: CGPoint { bend ?? CGPoint(x: (start.x + end.x) / 2, y: (start.y + end.y) / 2) }
     var control: CGPoint {
@@ -75,6 +76,46 @@ struct AnnotationMark: Equatable, Identifiable {
          .foregroundColor: style.color.nsColor,
          .strokeColor: NSColor.white, .strokeWidth: -2.5]
     }
+    // A bent line runs through start, bend, and end as two cubic segments. Its direction at the bend
+    // is parallel to start→end, so a bend that lies on the line slides along it and keeps it straight.
+    // Each side's tangent is capped at the bend's distance from that end along the line, so the curve
+    // never swings past an end before returning to it.
+    var lineCurves: [[CGPoint]] {
+        guard kind == .line, let b = bend else { return [] }
+        let dx = end.x-start.x, dy = end.y-start.y, length = max(hypot(dx, dy), 0.001)
+        let ux = dx/length, uy = dy/length
+        let along = (b.x-start.x)*ux + (b.y-start.y)*uy
+        let inLength = min(hypot(b.x-start.x, b.y-start.y)/3, max(0, along))
+        let outLength = min(hypot(end.x-b.x, end.y-b.y)/3, max(0, length - along))
+        let into = CGPoint(x: b.x-ux*inLength, y: b.y-uy*inLength)
+        let out = CGPoint(x: b.x+ux*outLength, y: b.y+uy*outLength)
+        return [[start, CGPoint(x: (start.x+into.x)/2, y: (start.y+into.y)/2), into, b],
+                [b, out, CGPoint(x: (end.x+out.x)/2, y: (end.y+out.y)/2), end]]
+    }
+    // Where a dragged line handle lands: within `tolerance` of the straight line it snaps onto it,
+    // short of either end, so the handle slides along the line without curving it.
+    func lineBend(for p: CGPoint, tolerance: CGFloat) -> CGPoint {
+        let dx = end.x-start.x, dy = end.y-start.y, lengthSquared = dx*dx + dy*dy
+        guard lengthSquared > 1 else { return p }
+        let t = ((p.x-start.x)*dx + (p.y-start.y)*dy) / lengthSquared
+        let distance = abs((p.x-start.x)*dy - (p.y-start.y)*dx) / sqrt(lengthSquared)
+        guard distance <= tolerance else { return p }
+        let along = max(0.05, min(0.95, t))
+        return CGPoint(x: start.x + along*dx, y: start.y + along*dy)
+    }
+    // Moves one end of a line and carries its bend along, keeping the bend's place along and across
+    // the line, so a curve keeps its shape and a straight line stays straight.
+    mutating func moveLineEnd(_ index: Int, to p: CGPoint) {
+        let oldStart = start, oldEnd = end
+        if index == 0 { start = p } else { end = p }
+        guard let b = bend else { return }
+        let dx = oldEnd.x-oldStart.x, dy = oldEnd.y-oldStart.y, lengthSquared = dx*dx + dy*dy
+        guard lengthSquared > 0.001 else { return }
+        let ax = b.x-oldStart.x, ay = b.y-oldStart.y
+        let along = (ax*dx + ay*dy) / lengthSquared, across = (ax*dy - ay*dx) / lengthSquared
+        let nx = end.x-start.x, ny = end.y-start.y
+        bend = CGPoint(x: start.x + along*nx + across*ny, y: start.y + along*ny - across*nx)
+    }
     static func polyline(_ points: [CGPoint], style: AnnotationStyle) -> AnnotationMark {
         AnnotationMark(kind: .polyline, start: points.first ?? .zero, end: points.last ?? .zero, style: style, points: points)
     }
@@ -84,6 +125,14 @@ struct AnnotationMark: Equatable, Identifiable {
         switch kind {
         case .arrow: return (0...48).map { point(at: CGFloat($0)/48) }
         case .polyline: return points
+        case .line where bend != nil:
+            return [start] + lineCurves.flatMap { c in
+                (1...24).map { step -> CGPoint in
+                    let t = CGFloat(step)/24, u = 1-t
+                    return CGPoint(x: u*u*u*c[0].x + 3*u*u*t*c[1].x + 3*u*t*t*c[2].x + t*t*t*c[3].x,
+                                   y: u*u*u*c[0].y + 3*u*u*t*c[1].y + 3*u*t*t*c[2].y + t*t*t*c[3].y)
+                }
+            }
         default: return [start, end]
         }
     }
@@ -147,7 +196,7 @@ final class AnnotationDocument: ObservableObject {
             if case .text(let text) = mark.kind { textDraft = text }
             switch mark.kind {
             case .arrow: statusMessage = "Drag either end or the middle handle to bend the arrow."
-            case .line: statusMessage = "Drag either end to adjust the line."
+            case .line: statusMessage = "Drag either end to adjust the line; slide or pull the middle dot to curve it."
             case .polyline: statusMessage = "Drag any point to reshape the line."
             default: statusMessage = "Drag the mark to move it; drag a corner to resize."
             }
@@ -425,7 +474,9 @@ final class AnnotationDocument: ObservableObject {
             guard let first = points.first else { return }
             let path = NSBezierPath()
             path.move(to: first)
-            points.dropFirst().forEach { path.line(to: $0) }
+            let curves = annotation.lineCurves.map { $0.map(translated) }
+            if curves.isEmpty { points.dropFirst().forEach { path.line(to: $0) } }
+            else { curves.forEach { path.curve(to: $0[3], controlPoint1: $0[1], controlPoint2: $0[2]) } }
             path.lineWidth = annotation.style.width
             path.lineCapStyle = .round
             path.lineJoinStyle = .round

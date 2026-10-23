@@ -86,6 +86,42 @@ struct AnnotationTests {
         drag(line.end, CGPoint(x: 300, y: 100))
         precondition(lines.annotations[0].start == line.start && lines.annotations[0].end == CGPoint(x: 300, y: 100), "Dragging a line end must move only that end")
         lines.undo(); precondition(lines.annotations[0] == line)
+        // The line's middle dot slides along it (staying straight) and curves it when pulled away.
+        func isStraight(_ m: AnnotationMark) -> Bool {
+            let dx = m.end.x-m.start.x, dy = m.end.y-m.start.y, length = hypot(dx, dy)
+            return m.pathPoints.allSatisfy { abs(($0.x-m.start.x)*dy - ($0.y-m.start.y)*dx) / length < 0.01 }
+        }
+        lines.select(line.id)
+        drag(CGPoint(x: 140, y: 140), CGPoint(x: 92, y: 88))
+        let slid = lines.annotations[0]
+        precondition(slid.start == line.start && slid.end == line.end && slid.bend == CGPoint(x: 90, y: 90), "Middle dot must snap onto the line when dragged along it: \(String(describing: slid.bend))")
+        precondition(isStraight(slid), "Sliding the dot must keep the line straight")
+        drag(CGPoint(x: 90, y: 90), CGPoint(x: 60, y: 160))
+        let bent = lines.annotations[0]
+        precondition(bent.bend == CGPoint(x: 60, y: 160) && !isStraight(bent), "Pulling the dot off the line must curve it")
+        precondition(bent.pathPoints.contains(CGPoint(x: 60, y: 160)) && bent.contains(CGPoint(x: 60, y: 160), tolerance: 5), "Curve must pass through the dot")
+        precondition(!bent.contains(CGPoint(x: 140, y: 140), tolerance: 5), "Hit testing must follow the curve, not the old straight line")
+        var nearEnd = line; nearEnd.bend = line.lineBend(for: CGPoint(x: 41, y: 42), tolerance: 8)
+        let xs = nearEnd.pathPoints.map(\.x)
+        precondition(isStraight(nearEnd) && xs.min()! >= 40 - 0.001 && xs.max()! <= 240 + 0.001, "A dot slid toward one end must not push the line past its ends")
+        drag(bent.end, CGPoint(x: 340, y: 40))
+        let stretched = lines.annotations[0]
+        precondition(stretched.start == bent.start && stretched.end == CGPoint(x: 340, y: 40), "Dragging an end must move only that end")
+        let oldAlong = (60.0 - 40) * 200 + (160.0 - 40) * 200, newDx = 300.0, newDy = 0.0
+        let tOld = oldAlong / (200.0*200 + 200*200), tNew = ((stretched.bend!.x-40)*newDx + (stretched.bend!.y-40)*newDy) / (newDx*newDx)
+        precondition(abs(tOld - tNew) < 0.001, "Moving an end must keep the dot's place along the line")
+        precondition(stretched.bend!.y > 40, "Moving an end must keep the curve on the same side")
+        lines.undo(); lines.undo(); lines.undo()
+        precondition(lines.annotations[0] == line, "Each dot or end drag must undo in one step")
+        var hook = AnnotationMark(kind: .line, start: .zero, end: CGPoint(x: 100, y: 0), bend: CGPoint(x: 95, y: 80))
+        precondition(hook.pathPoints.allSatisfy { $0.x <= 100.001 && $0.x >= -0.001 }, "A dot pulled off near an end must not swing the curve past that end")
+        hook.bend = CGPoint(x: 50, y: 80)
+        precondition(hook.pathPoints.contains(CGPoint(x: 50, y: 80)), "Capping must keep the curve through the dot")
+        // A dot slid within handle reach of an end is still grabbed instead of the end.
+        lines.add(AnnotationMark(kind: .line, start: CGPoint(x: 40, y: 270), end: CGPoint(x: 140, y: 270), bend: CGPoint(x: 45, y: 270)))
+        drag(CGPoint(x: 45, y: 270), CGPoint(x: 45, y: 290))
+        precondition(lines.annotations.last!.start == CGPoint(x: 40, y: 270) && lines.annotations.last!.bend == CGPoint(x: 45, y: 290), "The nearest handle must win")
+        lines.undo(); lines.undo()
         // Polyline: clicks add points, a press-drag lays down a segment, double-click finishes.
         lines.selectedTool = .polyline
         click(CGPoint(x: 20, y: 200))
@@ -130,6 +166,12 @@ struct AnnotationTests {
         precondition(lines.annotations.count == 4 && lines.polylineDraft.isEmpty, "Export must include an in-progress polyline")
         let stroke = exported.colorAt(x: 36 + 340, y: exported.pixelsHigh - (36 + 20))!.usingColorSpace(.deviceRGB)!
         precondition(stroke.blueComponent > 0.8 && stroke.redComponent < 0.3, "Polyline must export with its style")
-        print("PASS: canvas draw/select/move/resize/bend, lines and polylines, text styling, edit undo/redo, highlight export")
+        let curvedLine = AnnotationDocument(image: image)
+        curvedLine.add(AnnotationMark(kind: .line, start: CGPoint(x: 20, y: 20), end: CGPoint(x: 220, y: 20), style: AnnotationStyle(color: .blue, width: 12), bend: CGPoint(x: 120, y: 120)))
+        let curvedPNG = NSBitmapImageRep(data: curvedLine.pngData()!)!
+        let peak = curvedPNG.colorAt(x: 36 + 120, y: curvedPNG.pixelsHigh - (36 + 120))!.usingColorSpace(.deviceRGB)!
+        let chord = curvedPNG.colorAt(x: 36 + 120, y: curvedPNG.pixelsHigh - (36 + 20))!.usingColorSpace(.deviceRGB)!
+        precondition(peak.blueComponent > 0.8 && peak.redComponent < 0.3 && chord.redComponent > 0.9, "Curved line must export through its dot, not along the chord")
+        print("PASS: canvas draw/select/move/resize/bend, lines (slide/curve) and polylines, text styling, edit undo/redo, highlight export")
     }
 }

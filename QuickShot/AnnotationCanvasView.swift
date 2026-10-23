@@ -78,8 +78,7 @@ final class AnnotationCanvasNSView: NSView {
 
     private func handles(for mark: AnnotationMark) -> [CGPoint] {
         switch mark.kind {
-        case .arrow: return [mark.start, mark.midpoint, mark.end]
-        case .line: return [mark.start, mark.end]
+        case .arrow, .line: return [mark.start, mark.midpoint, mark.end]
         case .polyline: return mark.points
         default: break
         }
@@ -107,7 +106,9 @@ final class AnnotationCanvasNSView: NSView {
         let point = modelPoint(for: event)
         if document.selectedTool == .select {
             if let selected = document.selectedMark {
-                activeHandle = handles(for: selected).firstIndex { hypot($0.x-point.x, $0.y-point.y) < 10 / displayScale }
+                // The nearest handle wins, so a middle dot slid close to an end stays grabbable.
+                let distances = handles(for: selected).map { hypot($0.x-point.x, $0.y-point.y) }
+                activeHandle = distances.indices.filter { distances[$0] < 10 / displayScale }.min { distances[$0] < distances[$1] }
             }
             if activeHandle == nil {
                 document.select(document.annotations.reversed().first { $0.contains(point, tolerance: 7 / displayScale) }?.id)
@@ -149,7 +150,8 @@ final class AnnotationCanvasNSView: NSView {
                     default: mark.end = point
                     }
                 case .line:
-                    if handle == 0 { mark.start = point } else { mark.end = point }
+                    if handle == 1 { mark.bend = mark.lineBend(for: point, tolerance: 8 / displayScale) }
+                    else { mark.moveLineEnd(handle, to: point) }
                 case .polyline:
                     mark.points[handle] = point
                 default:

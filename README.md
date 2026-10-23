@@ -101,7 +101,7 @@ The first rollout needs the one-time bootstrap install and GitHub signing-secret
 - Draw a Rectangle, Arrow, Line, Polyline, Highlight, or Text label. New marks become selected automatically.
 - Line draws a straight segment by dragging. Polyline adds a point per click (or a segment per drag); double-click or press Return to finish, Delete removes the last point, and Escape cancels. Switching tools keeps a polyline that already has two or more points.
 - Use Select to choose an existing mark. Drag it to move it; drag rectangle/highlight corners to resize. Text corner handles resize the font.
-- Select an arrow and drag either endpoint to reposition it, or its middle handle to bend the curve. Select a line or polyline and drag any point to reshape it.
+- Select an arrow and drag either endpoint to reposition it, or its middle handle to bend the curve. Select a line and drag either end to move it, or its middle dot to slide it along the line or pull it off the line to curve it (the line stays straight while the dot is on it). Select a polyline and drag any point to reshape it.
 - Set Color, Stroke (Thin/Medium/Thick), or Dashed for new or selected shapes. Text supports size 12–144 and Bold; use Apply Text to change a selected label.
 - Highlight draws a translucent colored area (yellow by default), preserving the content beneath it.
 - Undo/Redo cover drawing, moving, resizing, bending, styling, text edits, deletion, and Clear. Delete removes the selected mark; Escape deselects it when the canvas has focus.
