@@ -17,6 +17,7 @@ final class AnnotationCanvasNSView: NSView {
     private var currentPoint: CGPoint?
     private var originalMark: AnnotationMark?
     private var activeHandle: Int?
+    private var placingVertex = false
     private var observation: AnyCancellable?
 
     init(document: AnnotationDocument, displayScale: CGFloat) {
@@ -32,6 +33,19 @@ final class AnnotationCanvasNSView: NSView {
 
     override var acceptsFirstResponder: Bool { true }
 
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self))
+    }
+
+    // Shows the next polyline segment following the pointer.
+    override func mouseMoved(with event: NSEvent) {
+        guard document.selectedTool == .polyline, !document.polylineDraft.isEmpty else { return }
+        currentPoint = modelPoint(for: event)
+        needsDisplay = true
+    }
+
     override func resetCursorRects() {
         addCursorRect(bounds, cursor: document.selectedTool == .select ? .arrow : .crosshair)
     }
@@ -46,7 +60,7 @@ final class AnnotationCanvasNSView: NSView {
         if let mark = document.selectedMark, document.selectedTool == .select {
             NSColor.controlAccentColor.setStroke()
             let origin = document.imageOrigin
-            if mark.kind != .arrow {
+            if !mark.isPath {
                 let box = NSBezierPath(rect: mark.bounds.offsetBy(dx: origin.x, dy: origin.y))
                 box.lineWidth = 1 / displayScale
                 box.setLineDash([4 / displayScale, 4 / displayScale], count: 2, phase: 0)
@@ -63,16 +77,29 @@ final class AnnotationCanvasNSView: NSView {
     }
 
     private func handles(for mark: AnnotationMark) -> [CGPoint] {
-        if mark.kind == .arrow { return [mark.start, mark.midpoint, mark.end] }
+        switch mark.kind {
+        case .arrow: return [mark.start, mark.midpoint, mark.end]
+        case .line: return [mark.start, mark.end]
+        case .polyline: return mark.points
+        default: break
+        }
         let r = mark.bounds
         return [CGPoint(x: r.minX, y: r.minY), CGPoint(x: r.maxX, y: r.minY),
                 CGPoint(x: r.maxX, y: r.maxY), CGPoint(x: r.minX, y: r.maxY)]
     }
 
     override func keyDown(with event: NSEvent) {
-        if event.keyCode == 51 || event.keyCode == 117 { document.deleteSelected() }
-        else if event.keyCode == 53 { document.select(nil) }
-        else { super.keyDown(with: event) }
+        let drafting = !document.polylineDraft.isEmpty
+        // A key that edits the draft ends any press in progress, so its release adds nothing.
+        if drafting { placingVertex = false }
+        if event.keyCode == 51 || event.keyCode == 117 {
+            if drafting { document.removeLastPolylinePoint() } else { document.deleteSelected() }
+        } else if event.keyCode == 53 {
+            if drafting { document.cancelPolyline() } else { document.select(nil) }
+        } else if drafting, event.keyCode == 36 || event.keyCode == 76 {
+            document.finishPolyline()
+        } else { super.keyDown(with: event) }
+        needsDisplay = true
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -91,6 +118,12 @@ final class AnnotationCanvasNSView: NSView {
             return
         }
         document.select(nil)
+        if document.selectedTool == .polyline {
+            if event.clickCount > 1 { document.finishPolyline() }
+            else { document.addPolylinePoint(point); placingVertex = true }
+            currentPoint = point; needsDisplay = true
+            return
+        }
         if document.selectedTool == .text {
             guard !document.textDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 document.statusMessage = "Type a label first, then click where it belongs."
@@ -103,17 +136,23 @@ final class AnnotationCanvasNSView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
+        if placingVertex { currentPoint = modelPoint(for: event); needsDisplay = true; return }
         guard let startPoint else { return }
         let point = modelPoint(for: event)
         if var mark = originalMark {
             if let handle = activeHandle {
-                if mark.kind == .arrow {
+                switch mark.kind {
+                case .arrow:
                     switch handle {
                     case 0: mark.start = point
                     case 1: mark.bend = point
                     default: mark.end = point
                     }
-                } else {
+                case .line:
+                    if handle == 0 { mark.start = point } else { mark.end = point }
+                case .polyline:
+                    mark.points[handle] = point
+                default:
                     let corners = handles(for: mark)
                     let anchor = corners[(handle + 2) % 4]
                     if case .text = mark.kind {
@@ -126,10 +165,7 @@ final class AnnotationCanvasNSView: NSView {
                     } else { mark.start = anchor; mark.end = point }
                 }
             } else {
-                let dx = point.x-startPoint.x, dy = point.y-startPoint.y
-                mark.start.x += dx; mark.start.y += dy
-                mark.end.x += dx; mark.end.y += dy
-                if let bend = mark.bend { mark.bend = CGPoint(x: bend.x+dx, y: bend.y+dy) }
+                mark.offset(dx: point.x-startPoint.x, dy: point.y-startPoint.y)
             }
             document.replace(mark)
         } else { currentPoint = point }
@@ -137,6 +173,13 @@ final class AnnotationCanvasNSView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        if placingVertex {
+            // Dragging while placing a point lays down a segment, like the Line tool.
+            placingVertex = false
+            document.addPolylinePoint(modelPoint(for: event))
+            needsDisplay = true
+            return
+        }
         guard let startPoint else { return }
         if originalMark != nil {
             mouseDragged(with: event)
@@ -153,6 +196,9 @@ final class AnnotationCanvasNSView: NSView {
     }
 
     private var previewMark: AnnotationMark? {
+        if document.selectedTool == .polyline, !document.polylineDraft.isEmpty {
+            return .polyline(document.polylineDraft + (currentPoint.map { [$0] } ?? []), style: document.style)
+        }
         guard originalMark == nil, let startPoint, let currentPoint else { return nil }
         return document.makeMark(from: startPoint, to: currentPoint)
     }

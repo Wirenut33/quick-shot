@@ -36,7 +36,7 @@ struct AnnotationEditorView: View {
             Divider()
             actionBar
         }
-        .frame(minWidth: 1040, minHeight: 620)
+        .frame(minWidth: 1180, minHeight: 620)
     }
 
     private var toolBar: some View {
@@ -47,7 +47,7 @@ struct AnnotationEditorView: View {
                 }
             }
             .pickerStyle(.segmented)
-            .frame(width: 440)
+            .frame(width: 600)
 
             Spacer()
 
@@ -125,7 +125,9 @@ struct AnnotationEditorView: View {
                     }
                 }
             }
-            Text("Select a mark to move it. Drag corner handles to resize; drag an arrow’s middle handle to curve it.")
+            Text(document.selectedTool == .polyline
+                 ? "Click to add points, or drag to lay down a segment. Double-click or press Return to finish; Delete removes the last point."
+                 : "Select a mark to move it. Drag corner handles to resize; drag an arrow’s middle handle to curve it, or a line’s points to reshape it.")
                 .font(.caption).foregroundStyle(.secondary)
         }
         .padding(.horizontal, 14).padding(.bottom, 10)
