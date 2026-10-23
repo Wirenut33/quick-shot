@@ -106,7 +106,9 @@ final class AnnotationCanvasNSView: NSView {
         let point = modelPoint(for: event)
         if document.selectedTool == .select {
             if let selected = document.selectedMark {
-                activeHandle = handles(for: selected).firstIndex { hypot($0.x-point.x, $0.y-point.y) < 10 / displayScale }
+                // The nearest handle wins, so a middle dot slid close to an end stays grabbable.
+                let distances = handles(for: selected).map { hypot($0.x-point.x, $0.y-point.y) }
+                activeHandle = distances.indices.filter { distances[$0] < 10 / displayScale }.min { distances[$0] < distances[$1] }
             }
             if activeHandle == nil {
                 document.select(document.annotations.reversed().first { $0.contains(point, tolerance: 7 / displayScale) }?.id)

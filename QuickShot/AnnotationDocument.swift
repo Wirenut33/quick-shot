@@ -78,11 +78,15 @@ struct AnnotationMark: Equatable, Identifiable {
     }
     // A bent line runs through start, bend, and end as two cubic segments. Its direction at the bend
     // is parallel to start→end, so a bend that lies on the line slides along it and keeps it straight.
+    // Each side's tangent is capped at the bend's distance from that end along the line, so the curve
+    // never swings past an end before returning to it.
     var lineCurves: [[CGPoint]] {
         guard kind == .line, let b = bend else { return [] }
         let dx = end.x-start.x, dy = end.y-start.y, length = max(hypot(dx, dy), 0.001)
         let ux = dx/length, uy = dy/length
-        let inLength = hypot(b.x-start.x, b.y-start.y)/3, outLength = hypot(end.x-b.x, end.y-b.y)/3
+        let along = (b.x-start.x)*ux + (b.y-start.y)*uy
+        let inLength = min(hypot(b.x-start.x, b.y-start.y)/3, max(0, along))
+        let outLength = min(hypot(end.x-b.x, end.y-b.y)/3, max(0, length - along))
         let into = CGPoint(x: b.x-ux*inLength, y: b.y-uy*inLength)
         let out = CGPoint(x: b.x+ux*outLength, y: b.y+uy*outLength)
         return [[start, CGPoint(x: (start.x+into.x)/2, y: (start.y+into.y)/2), into, b],

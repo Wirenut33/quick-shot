@@ -113,6 +113,15 @@ struct AnnotationTests {
         precondition(stretched.bend!.y > 40, "Moving an end must keep the curve on the same side")
         lines.undo(); lines.undo(); lines.undo()
         precondition(lines.annotations[0] == line, "Each dot or end drag must undo in one step")
+        var hook = AnnotationMark(kind: .line, start: .zero, end: CGPoint(x: 100, y: 0), bend: CGPoint(x: 95, y: 80))
+        precondition(hook.pathPoints.allSatisfy { $0.x <= 100.001 && $0.x >= -0.001 }, "A dot pulled off near an end must not swing the curve past that end")
+        hook.bend = CGPoint(x: 50, y: 80)
+        precondition(hook.pathPoints.contains(CGPoint(x: 50, y: 80)), "Capping must keep the curve through the dot")
+        // A dot slid within handle reach of an end is still grabbed instead of the end.
+        lines.add(AnnotationMark(kind: .line, start: CGPoint(x: 40, y: 270), end: CGPoint(x: 140, y: 270), bend: CGPoint(x: 45, y: 270)))
+        drag(CGPoint(x: 45, y: 270), CGPoint(x: 45, y: 290))
+        precondition(lines.annotations.last!.start == CGPoint(x: 40, y: 270) && lines.annotations.last!.bend == CGPoint(x: 45, y: 290), "The nearest handle must win")
+        lines.undo(); lines.undo()
         // Polyline: clicks add points, a press-drag lays down a segment, double-click finishes.
         lines.selectedTool = .polyline
         click(CGPoint(x: 20, y: 200))
