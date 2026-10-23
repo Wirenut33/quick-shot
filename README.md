@@ -6,7 +6,7 @@ A lightweight macOS menu bar app for capturing and annotating screenshots.
 
 - **Capture & Annotate** - Full-screen, selection, and window captures open directly in the editor
 - **Annotation Toggle** - Turn annotation off to copy a capture directly to the clipboard
-- **Minimal Red Markup** - Add rectangles, arrows, and text without a complicated drawing tool
+- **Minimal Red Markup** - Add rectangles, arrows, lines, and text without a complicated drawing tool
 - **Expandable Canvas** - Add working room around a screenshot and include a written description
 - **Copy & Close** - Copy the annotated PNG to the clipboard in one step
 - **Save to Folder & Copy Path** - Optionally save annotated screenshots to a custom folder and copy the file path
@@ -52,7 +52,7 @@ Once running, QuickShot appears as a camera icon in your menu bar. Click it to a
 - **Save Location** - Click to choose a custom save folder (defaults to Desktop)
 - **Launch at Login** - Enable or disable automatic launch from the menu
 
-In the editor, choose Rectangle, Arrow, or Text. All markup is red. Add an optional description, then use **Copy & Close** or **Save PNG**.
+In the editor, choose Rectangle, Arrow, Line, Polyline, or Text. All markup is red. Add an optional description, then use **Copy & Close** or **Save PNG**.
 
 ## Permissions
 
@@ -98,9 +98,10 @@ The first rollout needs the one-time bootstrap install and GitHub signing-secret
 
 ## Editing annotations
 
-- Draw a Rectangle, Arrow, Highlight, or Text label. New marks become selected automatically.
+- Draw a Rectangle, Arrow, Line, Polyline, Highlight, or Text label. New marks become selected automatically.
+- Line draws a straight segment by dragging. Polyline adds a point per click (or a segment per drag); double-click or press Return to finish, Delete removes the last point, and Escape cancels. Switching tools keeps a polyline that already has two or more points.
 - Use Select to choose an existing mark. Drag it to move it; drag rectangle/highlight corners to resize. Text corner handles resize the font.
-- Select an arrow and drag either endpoint to reposition it, or its middle handle to bend the curve.
+- Select an arrow and drag either endpoint to reposition it, or its middle handle to bend the curve. Select a line or polyline and drag any point to reshape it.
 - Set Color, Stroke (Thin/Medium/Thick), or Dashed for new or selected shapes. Text supports size 12–144 and Bold; use Apply Text to change a selected label.
 - Highlight draws a translucent colored area (yellow by default), preserving the content beneath it.
 - Undo/Redo cover drawing, moving, resizing, bending, styling, text edits, deletion, and Clear. Delete removes the selected mark; Escape deselects it when the canvas has focus.

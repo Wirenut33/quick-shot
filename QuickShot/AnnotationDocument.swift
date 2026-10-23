@@ -7,13 +7,16 @@ import AppKit
 import Combine
 
 enum AnnotationTool: String, CaseIterable, Identifiable {
-    case select = "Select", rectangle = "Rectangle", arrow = "Arrow", highlight = "Highlight", text = "Text"
+    case select = "Select", rectangle = "Rectangle", arrow = "Arrow", line = "Line", polyline = "Polyline"
+    case highlight = "Highlight", text = "Text"
     var id: String { rawValue }
     var symbolName: String {
         switch self {
         case .select: return "cursorarrow"
         case .rectangle: return "rectangle"
         case .arrow: return "arrow.up.right"
+        case .line: return "line.diagonal"
+        case .polyline: return "point.3.connected.trianglepath.dotted"
         case .highlight: return "highlighter"
         case .text: return "textformat"
         }
@@ -44,12 +47,16 @@ struct AnnotationStyle: Equatable {
 }
 
 struct AnnotationMark: Equatable, Identifiable {
-    enum Kind: Equatable { case rectangle, arrow, highlight, text(String) }
+    enum Kind: Equatable { case rectangle, arrow, line, polyline, highlight, text(String) }
     let id = UUID()
     var kind: Kind
     var start: CGPoint
     var end: CGPoint
     var style = AnnotationStyle()
+    // Vertices of a polyline; start and end mirror its first and last points.
+    var points: [CGPoint] = [] {
+        didSet { if let first = points.first, let last = points.last { start = first; end = last } }
+    }
     // The point on the curve at t = 0.5, so dragging the middle handle
     // follows the pointer exactly, instead of moving an invisible control point.
     var bend: CGPoint? = nil
@@ -68,15 +75,36 @@ struct AnnotationMark: Equatable, Identifiable {
          .foregroundColor: style.color.nsColor,
          .strokeColor: NSColor.white, .strokeWidth: -2.5]
     }
+    static func polyline(_ points: [CGPoint], style: AnnotationStyle) -> AnnotationMark {
+        AnnotationMark(kind: .polyline, start: points.first ?? .zero, end: points.last ?? .zero, style: style, points: points)
+    }
+    // Arrows, lines, and polylines are drawn and hit-tested along these points rather than a box.
+    var isPath: Bool { kind == .arrow || kind == .line || kind == .polyline }
+    var pathPoints: [CGPoint] {
+        switch kind {
+        case .arrow: return (0...48).map { point(at: CGFloat($0)/48) }
+        case .polyline: return points
+        default: return [start, end]
+        }
+    }
     var bounds: CGRect {
         if case .text(let text) = kind { return CGRect(origin: start, size: (text as NSString).size(withAttributes: textAttributes)) }
+        if kind == .polyline, let first = points.first {
+            return points.reduce(CGRect(origin: first, size: .zero)) { $0.union(CGRect(origin: $1, size: .zero)) }
+        }
         return CGRect(x: min(start.x,end.x), y: min(start.y,end.y), width: abs(end.x-start.x), height: abs(end.y-start.y))
+    }
+    mutating func offset(dx: CGFloat, dy: CGFloat) {
+        start.x += dx; start.y += dy
+        end.x += dx; end.y += dy
+        if let bend { self.bend = CGPoint(x: bend.x+dx, y: bend.y+dy) }
+        if !points.isEmpty { points = points.map { CGPoint(x: $0.x+dx, y: $0.y+dy) } }
     }
     func contains(_ p: CGPoint, tolerance: CGFloat) -> Bool {
         switch kind {
-        case .arrow:
-            return (0..<48).contains { index in
-                let a = point(at: CGFloat(index)/48), b = point(at: CGFloat(index+1)/48)
+        case .arrow, .line, .polyline:
+            let path = pathPoints
+            return zip(path, path.dropFirst()).contains { a, b in
                 let dx = b.x-a.x, dy = b.y-a.y
                 let t = max(0, min(1, ((p.x-a.x)*dx + (p.y-a.y)*dy) / max(dx*dx+dy*dy, 0.001)))
                 return hypot(p.x-a.x-t*dx, p.y-a.y-t*dy) <= tolerance + style.width/2
@@ -93,7 +121,11 @@ struct AnnotationMark: Equatable, Identifiable {
 final class AnnotationDocument: ObservableObject {
     let image: NSImage
 
-    @Published var selectedTool: AnnotationTool = .rectangle
+    @Published var selectedTool: AnnotationTool = .rectangle {
+        // Leaving the polyline tool keeps whatever line was in progress.
+        didSet { if oldValue == .polyline, selectedTool != .polyline { commitPolyline(selecting: false) } }
+    }
+    @Published private(set) var polylineDraft: [CGPoint] = []
     @Published var annotations: [AnnotationMark] = []
     @Published var textDraft = ""
     @Published var descriptionText = ""
@@ -113,9 +145,18 @@ final class AnnotationDocument: ObservableObject {
         if let mark = selectedMark {
             style = mark.style
             if case .text(let text) = mark.kind { textDraft = text }
-            statusMessage = mark.kind == .arrow ? "Drag either end or the middle handle to bend the arrow." : "Drag the mark to move it; drag a corner to resize."
+            switch mark.kind {
+            case .arrow: statusMessage = "Drag either end or the middle handle to bend the arrow."
+            case .line: statusMessage = "Drag either end to adjust the line."
+            case .polyline: statusMessage = "Drag any point to reshape the line."
+            default: statusMessage = "Drag the mark to move it; drag a corner to resize."
+            }
+        } else if selectedTool == .text {
+            statusMessage = "Type a label, then click the canvas to place it."
+        } else if selectedTool == .polyline {
+            statusMessage = polylineHint
         } else {
-            statusMessage = selectedTool == .text ? "Type a label, then click the canvas to place it." : "Draw a mark, then select it to move, resize, or style it."
+            statusMessage = "Draw a mark, then select it to move, resize, or style it."
         }
     }
     func checkpoint() {
@@ -154,11 +195,44 @@ final class AnnotationDocument: ObservableObject {
         let kind: AnnotationMark.Kind
         switch selectedTool {
         case .arrow: kind = .arrow
+        case .line: kind = .line
         case .highlight: kind = .highlight
         case .text: kind = .text(textDraft)
         default: kind = .rectangle
         }
         return AnnotationMark(kind: kind, start: start, end: end, style: style)
+    }
+
+    let polylineHint = "Click to add points; double-click or press Return to finish, Escape to cancel."
+    func addPolylinePoint(_ point: CGPoint) {
+        if let last = polylineDraft.last, hypot(point.x-last.x, point.y-last.y) <= 4 { return }
+        polylineDraft.append(point)
+        statusMessage = polylineDraft.count == 1 ? polylineHint : "\(polylineDraft.count) points. Double-click or press Return to finish."
+    }
+    func removeLastPolylinePoint() {
+        guard !polylineDraft.isEmpty else { return }
+        polylineDraft.removeLast()
+        statusMessage = polylineHint
+    }
+    @discardableResult
+    func finishPolyline() -> Bool { commitPolyline(selecting: true) }
+    func cancelPolyline() {
+        guard !polylineDraft.isEmpty else { return }
+        polylineDraft = []
+        statusMessage = "Line canceled."
+    }
+    @discardableResult
+    private func commitPolyline(selecting: Bool) -> Bool {
+        let points = polylineDraft
+        guard !points.isEmpty else { return false }
+        polylineDraft = []
+        guard points.count >= 2 else {
+            statusMessage = "A line needs at least two points."
+            return false
+        }
+        let mark = AnnotationMark.polyline(points, style: style)
+        if selecting { add(mark) } else { checkpoint(); annotations.append(mark) }
+        return true
     }
 
     init(image: NSImage) {
@@ -237,6 +311,7 @@ final class AnnotationDocument: ObservableObject {
     }
 
     func renderedImage() -> NSImage? {
+        commitPolyline(selecting: false)
         let size = canvasSize
         guard size.width > 0, size.height > 0,
               let representation = NSBitmapImageRep(
@@ -344,6 +419,19 @@ final class AnnotationDocument: ObservableObject {
 
         case .arrow:
             drawArrow(annotation, from: start, to: end, color: color)
+
+        case .line, .polyline:
+            let points = annotation.pathPoints.map(translated)
+            guard let first = points.first else { return }
+            let path = NSBezierPath()
+            path.move(to: first)
+            points.dropFirst().forEach { path.line(to: $0) }
+            path.lineWidth = annotation.style.width
+            path.lineCapStyle = .round
+            path.lineJoinStyle = .round
+            if annotation.style.dashed { path.setLineDash([12, 8], count: 2, phase: 0) }
+            color.setStroke()
+            path.stroke()
 
         case .text(let text):
             (text as NSString).draw(at: start, withAttributes: annotation.textAttributes)
