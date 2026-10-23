@@ -114,6 +114,10 @@ struct AnnotationTests {
         lines.selectedTool = .polyline
         click(CGPoint(x: 10, y: 10)); click(CGPoint(x: 50, y: 10))
         key(53); precondition(lines.polylineDraft.isEmpty && lines.annotations.count == 2, "Escape must cancel the draft")
+        click(CGPoint(x: 10, y: 10))
+        canvas.mouseDown(with: event(.leftMouseDown, CGPoint(x: 50, y: 10)))
+        key(53); canvas.mouseUp(with: event(.leftMouseUp, CGPoint(x: 90, y: 10)))
+        precondition(lines.polylineDraft.isEmpty, "Releasing after Escape must not start a new draft")
         click(CGPoint(x: 10, y: 10)); click(CGPoint(x: 10, y: 10), clicks: 2)
         precondition(lines.annotations.count == 2 && lines.selectedTool == .polyline, "A single point is not a line")
         click(CGPoint(x: 10, y: 10)); click(CGPoint(x: 50, y: 10))

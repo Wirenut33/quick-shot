@@ -90,6 +90,8 @@ final class AnnotationCanvasNSView: NSView {
 
     override func keyDown(with event: NSEvent) {
         let drafting = !document.polylineDraft.isEmpty
+        // A key that edits the draft ends any press in progress, so its release adds nothing.
+        if drafting { placingVertex = false }
         if event.keyCode == 51 || event.keyCode == 117 {
             if drafting { document.removeLastPolylinePoint() } else { document.deleteSelected() }
         } else if event.keyCode == 53 {
