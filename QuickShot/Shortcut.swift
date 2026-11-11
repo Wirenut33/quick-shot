@@ -8,9 +8,12 @@ import Carbon.HIToolbox
 
 /// A capture command the user can run from the menu or a global shortcut.
 enum CaptureAction: String, CaseIterable, Identifiable, Codable {
-    case fullScreen, selection, window, text
+    case fullScreen, selection, window, text, recordScreen, recordSelection
 
     var id: String { rawValue }
+
+    /// Starts (or stops) a video recording rather than taking a still capture.
+    var isRecording: Bool { self == .recordScreen || self == .recordSelection }
 
     var title: String {
         switch self {
@@ -18,6 +21,8 @@ enum CaptureAction: String, CaseIterable, Identifiable, Codable {
         case .selection: return "Capture Selection"
         case .window: return "Capture Window"
         case .text: return "Capture Text"
+        case .recordScreen: return "Record Screen"
+        case .recordSelection: return "Record Selection"
         }
     }
 
@@ -27,6 +32,8 @@ enum CaptureAction: String, CaseIterable, Identifiable, Codable {
         case .selection: return "Drag over any area"
         case .window: return "Click any window"
         case .text: return "Copy the text or QR code in an area"
+        case .recordScreen: return "Record the display under the pointer"
+        case .recordSelection: return "Record an area or a window"
         }
     }
 
@@ -37,6 +44,8 @@ enum CaptureAction: String, CaseIterable, Identifiable, Codable {
         case .selection: return 2
         case .window: return 3
         case .text: return 4
+        case .recordScreen: return 5
+        case .recordSelection: return 6
         }
     }
 
@@ -45,7 +54,8 @@ enum CaptureAction: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .fullScreen: return Shortcut(keyCode: UInt32(kVK_ANSI_1), modifiers: [.command, .shift])
         case .selection: return Shortcut(keyCode: UInt32(kVK_ANSI_2), modifiers: [.command, .shift])
-        case .window, .text: return nil
+        case .recordSelection: return Shortcut(keyCode: UInt32(kVK_ANSI_5), modifiers: [.command, .shift, .option])
+        case .window, .text, .recordScreen: return nil
         }
     }
 }

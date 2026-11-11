@@ -3,6 +3,7 @@
 //  QuickShot
 //
 
+import AVFoundation
 import AppKit
 import SwiftUI
 
@@ -31,6 +32,8 @@ struct SettingsView: View {
         TabView {
             GeneralSettings(showWelcome: showWelcome)
                 .tabItem { Label("General", systemImage: "gearshape") }
+            RecordingSettings()
+                .tabItem { Label("Recording", systemImage: "record.circle") }
             ShortcutSettings()
                 .tabItem { Label("Shortcuts", systemImage: "keyboard") }
             AboutSettings()
@@ -115,6 +118,80 @@ private struct GeneralSettings: View {
             loginProblem = error.localizedDescription
         }
         launchAtLogin = LoginItemManager.shared.isEnabled
+    }
+}
+
+private struct RecordingSettings: View {
+    @ObservedObject private var settings = AppSettings.shared
+    @State private var microphones: [AVCaptureDevice] = []
+    @State private var cameras: [AVCaptureDevice] = []
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("Record the microphone", isOn: $settings.recordMicrophone)
+                Picker("Microphone", selection: $settings.microphoneID) {
+                    Text("System default").tag(String?.none)
+                    ForEach(microphones, id: \.uniqueID) { Text($0.localizedName).tag(Optional($0.uniqueID)) }
+                }
+                .disabled(!settings.recordMicrophone)
+                permissionNote(for: .audio, enabled: settings.recordMicrophone, name: "Microphone", pane: "Privacy_Microphone")
+                Toggle("Record system audio", isOn: $settings.recordSystemAudio)
+            } header: {
+                Text("Sound")
+            } footer: {
+                Text("System audio is the sound your Mac plays, such as an app or a video. QuickShot's own sounds are left out.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
+            Section {
+                Toggle("Show the camera", isOn: $settings.recordCamera)
+                Picker("Camera", selection: $settings.cameraID) {
+                    Text("System default").tag(String?.none)
+                    ForEach(cameras, id: \.uniqueID) { Text($0.localizedName).tag(Optional($0.uniqueID)) }
+                }
+                .disabled(!settings.recordCamera)
+                permissionNote(for: .video, enabled: settings.recordCamera, name: "Camera", pane: "Privacy_Camera")
+            } header: {
+                Text("Camera")
+            } footer: {
+                Text("Your camera appears in a round bubble that is recorded with the screen. Drag it to move it; double-click it to change its size.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
+            Section("Recording") {
+                Toggle("Highlight clicks", isOn: $settings.recordShowsClicks)
+                Toggle("Count down before recording", isOn: $settings.recordCountdown)
+                Text("Click the stop button in the menu bar, or press the recording shortcut again, to finish. The recording then opens for trimming and export as a movie or GIF.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+        .onAppear(perform: loadDevices)
+    }
+
+    @ViewBuilder
+    private func permissionNote(for mediaType: AVMediaType, enabled: Bool, name: String, pane: String) -> some View {
+        let status = AVCaptureDevice.authorizationStatus(for: mediaType)
+        if enabled, status == .denied || status == .restricted {
+            HStack {
+                Text("\(name) access is turned off for QuickShot.")
+                    .font(.caption).foregroundStyle(.orange)
+                Button("Open System Settings") {
+                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(pane)") {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
+                .controlSize(.small)
+            }
+        }
+    }
+
+    private func loadDevices() {
+        microphones = AVCaptureDevice.DiscoverySession(
+            deviceTypes: [.microphone, .external], mediaType: .audio, position: .unspecified
+        ).devices
+        cameras = CameraBubble.availableCameras()
     }
 }
 

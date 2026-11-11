@@ -6,11 +6,18 @@ import sys
 from pathlib import Path
 
 DIRECT_BUNDLE_ID = "com.quickshot.QuickShot"
-REQUIRED_ENTITLEMENTS = {"com.apple.security.app-sandbox": True}
+REQUIRED_ENTITLEMENTS = {
+    "com.apple.security.app-sandbox": True,
+    # Screen recordings with the microphone and the camera bubble.
+    "com.apple.security.device.audio-input": True,
+    "com.apple.security.device.camera": True,
+}
 ALLOWED_ENTITLEMENTS = {
     "com.apple.security.app-sandbox",
     "com.apple.security.files.bookmarks.app-scope",
     "com.apple.security.files.user-selected.read-write",
+    "com.apple.security.device.audio-input",
+    "com.apple.security.device.camera",
     # Added by Apple at distribution signing.
     "com.apple.application-identifier",
     "com.apple.developer.team-identifier",
@@ -39,6 +46,9 @@ def validate_info(info: dict) -> None:
         raise ValueError("Missing LSApplicationCategoryType")
     if not info.get("NSHumanReadableCopyright"):
         raise ValueError("Missing NSHumanReadableCopyright")
+    for key in ("NSCameraUsageDescription", "NSMicrophoneUsageDescription"):
+        if not info.get(key):
+            raise ValueError(f"Missing {key}")
     if info.get("LSMinimumSystemVersion") != "15.0":
         raise ValueError("Unexpected minimum OS")
 

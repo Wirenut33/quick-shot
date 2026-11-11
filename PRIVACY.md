@@ -7,6 +7,7 @@ QuickShot does not collect, store or share any personal data.
 ## What stays on your Mac
 
 - **Screenshots.** QuickShot captures the screen only when you start a capture. Images go to the clipboard, the editor, your Snapshot Collection, or a folder you choose. They are never uploaded.
+- **Screen recordings.** QuickShot records the screen only while a recording is running. The microphone, system audio and camera are used only when you turn them on. Recordings stay in a temporary folder on your Mac until you copy or save them; one you discard is deleted. They are never uploaded.
 - **Recognised text.** Capture Text and Copy Text use Apple's on-device Vision framework. The image and the text never leave your Mac.
 - **Settings.** Your shortcuts, save folder and tool styles are stored in the app's preferences on your Mac.
 
@@ -23,7 +24,9 @@ QuickShot does not collect, store or share any personal data.
 
 ## Permissions
 
-- **Screen & System Audio Recording** is required by macOS for any app that captures the screen. QuickShot records no audio and no video.
+- **Screen & System Audio Recording** is required by macOS for any app that captures the screen. System audio is recorded only during a screen recording with System Audio turned on.
+- **Microphone** is asked for only when you start a recording with Microphone turned on, and is used only while recording.
+- **Camera** is asked for only when you start a recording with Camera turned on. The camera turns on when you start a recording, so you can place its bubble during the countdown, and turns off when the recording ends or is cancelled. Its picture is shown on your screen in a bubble, which the screen recording includes.
 - **Files and folders.** QuickShot can write only to the folder you choose and to files you name in a save dialog.
 - **Login item.** QuickShot opens at login only if you turn that on.
 

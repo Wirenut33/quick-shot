@@ -7,8 +7,10 @@ xcrun swiftc -module-cache-path .build/SwiftModuleCache QuickShot/SnapshotCollec
 .build/collection-tests
 xcrun swiftc -module-cache-path .build/SwiftModuleCache QuickShot/AnnotationDocument.swift QuickShot/AnnotationCanvasView.swift Tests/AnnotationTests.swift -o .build/annotation-tests
 .build/annotation-tests
-xcrun swiftc -module-cache-path .build/SwiftModuleCache QuickShot/CaptureGeometry.swift QuickShot/Shortcut.swift QuickShot/HotKeyCenter.swift QuickShot/AppSettings.swift QuickShot/AnnotationDocument.swift QuickShot/TextRecognizer.swift Tests/CaptureTests.swift -o .build/capture-tests
+xcrun swiftc -module-cache-path .build/SwiftModuleCache QuickShot/CaptureGeometry.swift QuickShot/Shortcut.swift QuickShot/HotKeyCenter.swift QuickShot/AppSettings.swift QuickShot/RecordingModel.swift QuickShot/AnnotationDocument.swift QuickShot/TextRecognizer.swift Tests/CaptureTests.swift -o .build/capture-tests
 .build/capture-tests
+xcrun swiftc -module-cache-path .build/SwiftModuleCache QuickShot/RecordingModel.swift QuickShot/VideoExporter.swift QuickShot/Shortcut.swift Tests/RecordingTests.swift -o .build/recording-tests
+.build/recording-tests
 xcodebuild -project QuickShot.xcodeproj -scheme QuickShot -configuration Release \
   -derivedDataPath .build/CI -clonedSourcePackagesDirPath .build/SourcePackages \
   -disableAutomaticPackageResolution ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO build

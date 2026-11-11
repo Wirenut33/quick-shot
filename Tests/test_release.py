@@ -48,20 +48,29 @@ class ReleaseTests(unittest.TestCase):
     def test_app_store_build_rejects_updater_network_and_missing_sandbox(self):
         sandboxed = {"com.apple.security.app-sandbox": True,
                      "com.apple.security.files.user-selected.read-write": True,
-                     "com.apple.security.files.bookmarks.app-scope": True}
+                     "com.apple.security.files.bookmarks.app-scope": True,
+                     "com.apple.security.device.audio-input": True,
+                     "com.apple.security.device.camera": True}
         appstore.validate_entitlements(sandboxed)
         for bad in [{}, {"com.apple.security.app-sandbox": False},
                     {**sandboxed, "com.apple.security.network.client": True},
-                    {**sandboxed, "com.apple.security.get-task-allow": True}]:
+                    {**sandboxed, "com.apple.security.get-task-allow": True},
+                    {**sandboxed, "com.apple.security.device.camera": False},
+                    {**sandboxed, "com.apple.security.device.audio-input": False},
+                    {key: value for key, value in sandboxed.items() if key != "com.apple.security.device.camera"},
+                    {key: value for key, value in sandboxed.items() if key != "com.apple.security.device.audio-input"}]:
             with self.assertRaises(ValueError):
                 appstore.validate_entitlements(bad)
         info = {"CFBundleIdentifier": "com.michaelmorale.QuickShot", "ITSAppUsesNonExemptEncryption": False,
                 "LSApplicationCategoryType": "public.app-category.utilities",
-                "NSHumanReadableCopyright": "Copyright", "LSMinimumSystemVersion": "15.0"}
+                "NSHumanReadableCopyright": "Copyright", "LSMinimumSystemVersion": "15.0",
+                "NSCameraUsageDescription": "Camera bubble", "NSMicrophoneUsageDescription": "Voice-over"}
         appstore.validate_info(info)
         for bad in [{**info, "SUFeedURL": "https://example.com/appcast.xml"},
                     {**info, "CFBundleIdentifier": "com.quickshot.QuickShot"},
                     {**info, "NSHumanReadableCopyright": ""},
+                    {**info, "NSMicrophoneUsageDescription": ""},
+                    {key: value for key, value in info.items() if key != "NSCameraUsageDescription"},
                     {key: value for key, value in info.items() if key != "ITSAppUsesNonExemptEncryption"}]:
             with self.assertRaises(ValueError):
                 appstore.validate_info(bad)

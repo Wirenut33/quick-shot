@@ -37,6 +37,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         } else if arguments.contains("--editor-smoke-test") {
             diagnosticLaunch = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { controller.openEditorForTesting() }
+        } else if arguments.contains("--recording-self-test") {
+            diagnosticLaunch = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { controller.runRecordingSelfTest() }
+        } else if arguments.contains("--record-full") || arguments.contains("--record-selection") {
+            diagnosticLaunch = true
+            let action: CaptureAction = arguments.contains("--record-full") ? .recordScreen : .recordSelection
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { controller.captureForTesting(action) }
         } else if arguments.contains("--capture-full") {
             diagnosticLaunch = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { controller.captureForTesting(.fullScreen) }
@@ -51,6 +58,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if !diagnosticLaunch {
             controller.showWelcomeIfNeeded()
         }
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        statusBarController?.shouldTerminate() ?? .terminateNow
     }
 
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
