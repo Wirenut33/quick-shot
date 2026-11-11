@@ -6,7 +6,7 @@ QuickShot 1.4 embeds Sparkle 2.9.6. Every installed 1.4+ copy checks the public 
 
 ## What merging a PR does
 
-The `QuickShot` GitHub Actions workflow validates pull requests and pushes to `main`. A successful main build creates a universal arm64/x86_64 app and publishes a GitHub Release with the archive and signed `appcast.xml`. No manual version bump or tag is required. The Git ancestry count gives each main commit a deterministic increasing version (currently `1.4.<count>`, build `1000 + count`), including merges and squash merges. Published reruns are skipped; superseded main commits cannot replace the current feed. A failed build/sign/upload leaves the last working release intact. Assets are uploaded to a draft before it becomes the latest public release.
+The `QuickShot` GitHub Actions workflow validates pull requests and pushes to `main`. A successful main build creates a universal arm64/x86_64 app and publishes a GitHub Release with the archive and signed `appcast.xml`. No manual version bump or tag is required. The Git ancestry count gives each main commit a deterministic increasing version (currently `1.5.<count>`, build `1000 + count`), including merges and squash merges. Published reruns are skipped; superseded main commits cannot replace the current feed. A failed build/sign/upload leaves the last working release intact. Assets are uploaded to a draft before it becomes the latest public release.
 
 Feed: https://github.com/Wirenut33/quick-shot/releases/latest/download/appcast.xml
 
@@ -32,7 +32,8 @@ This pipeline is signed for the existing fleet but **not Developer ID notarized*
 
 ## Validation and recovery
 
-- `bash scripts/validate.sh` runs collection tests, release-contract tests, and builds both architectures. Tests require macOS pasteboard access.
+- `bash scripts/validate.sh` runs the release-contract, collection, annotation and capture tests, builds both architectures, and builds and checks the sandboxed App Store target. Tests require macOS pasteboard access.
+- `bash scripts/live_capture_check.sh` exercises real screen capture and the selection overlay. Run it locally, from a terminal that has Screen Recording permission, before merging a change to capture.
 - `bash scripts/test_updater.sh` exercises a real signed download, busy deferral, installation and relaunch using a disposable test app and a loopback feed. Run locally with the signing keys and a fresh `.build/UpdaterIntegration` directory after a signed release build. It never modifies `/Applications`.
 - `scripts/release.sh` builds with the real identity, generates a signed feed, and verifies the app, feed signature, version, archive length, and immutable download URL.
 - To test locally: set `RELEASE_VERSION`, `RELEASE_BUILD`, and `RELEASE_TAG`, then run `bash scripts/release.sh`. Keys stay in the local Keychain unless CI environment secrets are supplied.
