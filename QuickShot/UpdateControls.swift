@@ -1,3 +1,4 @@
+#if !APPSTORE
 import Combine
 import Sparkle
 import SwiftUI
@@ -22,3 +23,18 @@ struct CheckForUpdatesButton: View {
         .disabled(!availability.canCheckForUpdates)
     }
 }
+
+struct AutomaticUpdatesToggle: View {
+    @State private var enabled = AppUpdater.shared.automaticUpdates
+
+    var body: some View {
+        Toggle("Download and install updates automatically", isOn: Binding(
+            get: { enabled },
+            set: { value in
+                AppUpdater.shared.automaticUpdates = value
+                enabled = AppUpdater.shared.automaticUpdates
+            }
+        ))
+    }
+}
+#endif

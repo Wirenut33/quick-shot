@@ -5,82 +5,132 @@
 
 import AppKit
 import SwiftUI
-import UniformTypeIdentifiers
+
+/// What the editor's buttons do. The window controller supplies these so the buttons
+/// and the keyboard shortcuts run the same code.
+struct EditorCommands {
+    var copyAndClose: () -> Void = {}
+    var save: (_ askWhere: Bool) -> Void = { _ in }
+    var addToCollection: () -> Void = {}
+    var copyText: () -> Void = {}
+    var close: () -> Void = {}
+}
 
 struct AnnotationEditorView: View {
     @ObservedObject var document: AnnotationDocument
-    let screenshotManager: ScreenshotManager
-    let collection: SnapshotCollection
-    let closeWindow: () -> Void
+    @ObservedObject var settings: AppSettings
+    let commands: EditorCommands
+    @State private var shownScale: CGFloat = 1
 
     var body: some View {
         VStack(spacing: 0) {
             toolBar
             styleBar
             Divider()
-
-            ScrollView([.horizontal, .vertical]) {
-                AnnotationCanvasView(document: document, displayScale: document.displayScale)
-                    .frame(
-                        width: document.canvasSize.width * document.displayScale,
-                        height: document.canvasSize.height * document.displayScale
-                    )
-                    .background(Color.white)
-                    .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
-                    .padding(24)
-            }
-            .background(Color(nsColor: .windowBackgroundColor))
-
+            canvas
             Divider()
             descriptionArea
             Divider()
             actionBar
         }
-        .frame(minWidth: 1180, minHeight: 620)
+        .frame(minWidth: 760, minHeight: 520)
     }
+
+    private var canvas: some View {
+        GeometryReader { proxy in
+            let scale = document.displayScale(fitting: CGSize(width: proxy.size.width - 48, height: proxy.size.height - 48))
+            ScrollView([.horizontal, .vertical]) {
+                AnnotationCanvasView(document: document, displayScale: scale)
+                    .frame(
+                        width: document.canvasSize.width * scale,
+                        height: document.canvasSize.height * scale
+                    )
+                    .background(Color.white)
+                    .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
+                    .padding(24)
+                    .frame(minWidth: proxy.size.width, minHeight: proxy.size.height)
+            }
+            .onAppear { shownScale = scale }
+            .onChange(of: scale) { _, value in shownScale = value }
+        }
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    // MARK: Tools
 
     private var toolBar: some View {
-        HStack(spacing: 12) {
-            Picker("Tool", selection: $document.selectedTool) {
-                ForEach(AnnotationTool.allCases) { tool in
-                    Label(tool.rawValue, systemImage: tool.symbolName).tag(tool)
+        HStack(spacing: 4) {
+            ForEach(AnnotationTool.allCases) { tool in
+                let selected = document.selectedTool == tool
+                Button {
+                    document.selectedTool = tool
+                } label: {
+                    Image(systemName: tool.symbolName)
+                        .frame(width: 32, height: 26)
+                        .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(selected ? Color.accentColor.opacity(0.25) : Color.clear)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(selected ? Color.accentColor : Color.clear, lineWidth: 1)
+                )
+                .help("\(tool.rawValue) (\(tool.shortcutKey))")
+                .accessibilityLabel(tool.rawValue)
+                .accessibilityHint("Shortcut \(tool.shortcutKey)")
+                .accessibilityAddTraits(selected ? .isSelected : [])
             }
-            .pickerStyle(.segmented)
-            .frame(width: 600)
 
-            Spacer()
+            Spacer(minLength: 12)
 
-            Button {
-                document.undo()
-            } label: {
-                Label("Undo", systemImage: "arrow.uturn.backward")
-            }
-            .disabled(!document.canUndo)
-            .keyboardShortcut("z", modifiers: .command)
-
-            Button("Redo") { document.redo() }
+            iconButton("Undo", "arrow.uturn.backward", help: "Undo (⌘Z)") { document.undo() }
+                .disabled(!document.canUndo)
+                .keyboardShortcut("z", modifiers: .command)
+            iconButton("Redo", "arrow.uturn.forward", help: "Redo (⇧⌘Z)") { document.redo() }
                 .disabled(!document.canRedo)
                 .keyboardShortcut("z", modifiers: [.command, .shift])
-            Button("Delete") { document.deleteSelected() }
+            iconButton("Delete Selected Mark", "delete.left", help: "Delete the selected mark (⌫)") { document.deleteSelected() }
                 .disabled(document.selectedMark == nil)
-
-            Button {
-                document.clear()
-            } label: {
-                Label("Clear", systemImage: "trash")
-            }
-            .disabled(document.annotations.isEmpty)
-
-            Button {
+            iconButton("Clear All Marks", "trash", help: "Remove every mark") { document.clear() }
+                .disabled(document.annotations.isEmpty)
+            iconButton("Expand Canvas", "arrow.up.left.and.arrow.down.right", help: "Add room around the screenshot") {
                 document.expandCanvas()
-            } label: {
-                Label("Expand Canvas", systemImage: "arrow.up.left.and.arrow.down.right")
             }
             .disabled(document.canvasPadding >= 360)
+
+            Divider().frame(height: 18).padding(.horizontal, 4)
+
+            iconButton("Zoom Out", "minus.magnifyingglass", help: "Zoom out (⌘−)") { document.zoomOut() }
+            Menu {
+                Button("Fit to Window (⌘1)") { document.zoomToFit() }
+                Button("Actual Size (⌘0)") { document.zoomToActualSize() }
+            } label: {
+                Text(document.zoom == .fit ? "Fit" : "\(Int((shownScale * document.backingScale * 100).rounded()))%")
+                    .monospacedDigit()
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("Zoom level")
+            .accessibilityLabel("Zoom")
+            iconButton("Zoom In", "plus.magnifyingglass", help: "Zoom in (⌘+)") { document.zoomIn() }
         }
-        .padding(14)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
     }
+
+    private func iconButton(_ label: String, _ symbol: String, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol).frame(width: 22, height: 20)
+        }
+        .buttonStyle(.borderless)
+        .help(help)
+        .accessibilityLabel(label)
+    }
+
+    // MARK: Style
 
     private func styleBinding<Value>(_ key: WritableKeyPath<AnnotationStyle, Value>) -> Binding<Value> {
         Binding(get: { document.style[keyPath: key] }, set: { value in
@@ -88,56 +138,73 @@ struct AnnotationEditorView: View {
         })
     }
 
-    private var editingText: Bool {
-        if document.selectedTool == .text { return true }
-        if case .text = document.selectedMark?.kind { return true }
-        return false
-    }
-
-    private var strokeApplicable: Bool {
-        !editingText && document.selectedTool != .highlight && document.selectedMark?.kind != .highlight
+    /// The tool whose options are showing: the selected mark's, or the active tool's.
+    private var activeTool: AnnotationTool {
+        document.selectedMark?.tool ?? document.selectedTool
     }
 
     private var styleBar: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 16) {
-                Picker("Color", selection: styleBinding(\.color)) {
-                    ForEach(AnnotationColor.allCases) { color in Text(color.rawValue).tag(color) }
-                }.frame(width: 150)
-                Picker("Stroke", selection: styleBinding(\.width)) {
-                    Text("Thin").tag(CGFloat(3)); Text("Medium").tag(CGFloat(6)); Text("Thick").tag(CGFloat(12))
-                }.frame(width: 180).disabled(!strokeApplicable)
-                Toggle("Dashed", isOn: styleBinding(\.dashed))
-                    .disabled(!strokeApplicable)
-                Spacer()
-                Text(document.selectedMark == nil ? "Style for new marks" : "Style for selected mark")
+        HStack(spacing: 14) {
+            if activeTool == .select {
+                Text("Pick a tool, or click a mark to change it.")
                     .foregroundStyle(.secondary)
-            }
-            if editingText {
-                HStack {
-                    TextField("Text to place", text: $document.textDraft)
-                        .textFieldStyle(.roundedBorder)
-                    Stepper("Size \(Int(document.style.fontSize))", value: styleBinding(\.fontSize), in: 12...144, step: 4)
-                        .frame(width: 150)
-                    Toggle("Bold", isOn: styleBinding(\.bold))
-                    if document.selectedMark != nil {
-                        Button("Apply Text") { document.updateText() }
+            } else {
+                HStack(spacing: 3) {
+                    ForEach(AnnotationColor.allCases) { color in
+                        let selected = document.style.color == color
+                        Button {
+                            var style = document.style; style.color = color; document.applyStyle(style)
+                        } label: {
+                            Circle()
+                                .fill(Color(nsColor: color.nsColor))
+                                .frame(width: 18, height: 18)
+                                .overlay(Circle().stroke(Color.primary.opacity(selected ? 0.9 : 0.25), lineWidth: selected ? 2 : 1))
+                                .padding(3)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .help(color.rawValue)
+                        .accessibilityLabel("\(color.rawValue) colour")
+                        .accessibilityAddTraits(selected ? .isSelected : [])
                     }
                 }
+                .disabled(activeTool == .redact && document.style.pixelate)
+
+                switch activeTool {
+                case .rectangle, .arrow, .line, .polyline:
+                    Picker("Stroke", selection: styleBinding(\.width)) {
+                        Text("Thin").tag(CGFloat(3)); Text("Medium").tag(CGFloat(6)); Text("Thick").tag(CGFloat(12))
+                    }
+                    .pickerStyle(.segmented).labelsHidden().fixedSize()
+                    .accessibilityLabel("Stroke width")
+                    Toggle("Dashed", isOn: styleBinding(\.dashed))
+                case .text:
+                    Stepper("Size \(Int(document.style.fontSize))", value: styleBinding(\.fontSize), in: 12...144, step: 4)
+                        .fixedSize()
+                    Toggle("Bold", isOn: styleBinding(\.bold))
+                case .redact:
+                    Picker("Redaction", selection: styleBinding(\.pixelate)) {
+                        Text("Solid").tag(false); Text("Pixelate").tag(true)
+                    }
+                    .pickerStyle(.segmented).labelsHidden().fixedSize()
+                    .accessibilityLabel("Redaction style")
+                    Text(document.style.pixelate ? "Pixelation can sometimes be reversed. Use Solid for secrets." : "Solid fully hides what is underneath.")
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                default:
+                    EmptyView()
+                }
             }
-            Text(document.selectedTool == .polyline
-                 ? "Click to add points, or drag to lay down a segment. Double-click or press Return to finish; Delete removes the last point."
-                 : "Select a mark to move it. Drag corner handles to resize; drag the middle dot of an arrow or line to curve it, or a polyline’s points to reshape it.")
-                .font(.caption).foregroundStyle(.secondary)
-        }
-        .padding(.horizontal, 14).padding(.bottom, 10)
-        .onChange(of: document.selectedTool) { _, tool in
-            if tool != .select {
-                document.select(nil)
-                if tool == .highlight { var style = document.style; style.color = .yellow; document.applyStyle(style) }
+            Spacer(minLength: 0)
+            if document.selectedMark != nil {
+                Text("Editing selected mark").font(.caption).foregroundStyle(.secondary)
             }
         }
+        .frame(height: 28)
+        .padding(.horizontal, 14)
+        .padding(.bottom, 10)
     }
+
+    // MARK: Description and actions
 
     private var descriptionArea: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -145,70 +212,51 @@ struct AnnotationEditorView: View {
                 .font(.headline)
             TextEditor(text: $document.descriptionText)
                 .font(.body)
-                .frame(height: 62)
+                .frame(height: 48)
                 .padding(5)
                 .overlay(
                     RoundedRectangle(cornerRadius: 6)
                         .stroke(Color(nsColor: .separatorColor))
                 )
+                .accessibilityLabel("Description")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
     }
 
     private var actionBar: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "checkmark.circle")
-                .foregroundStyle(.secondary)
+        HStack(spacing: 10) {
             Text(document.statusMessage)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .layoutPriority(-1)
+                .accessibilityLabel("Status: \(document.statusMessage)")
 
-            Spacer()
+            Button("Copy Text", action: commands.copyText)
+                .help("Copy the text and QR codes in this image")
 
-            Button("Add to Collection") {
-                if let image = document.renderedImage(), collection.add(image) {
-                    closeWindow()
-                } else {
-                    document.statusMessage = collection.message
-                }
-            }
+            Button("Add to Collection", action: commands.addToCollection)
 
-            Button("Close") {
-                closeWindow()
-            }
+            Button("Close", action: commands.close)
 
             Button {
-                savePNG()
+                commands.save(false)
             } label: {
-                Label(
-                    screenshotManager.copyPathMode ? "Save & Copy Path" : "Save PNG",
-                    systemImage: "square.and.arrow.down"
-                )
+                Label(settings.copyPathMode ? "Save & Copy Path" : "Save", systemImage: "square.and.arrow.down")
             }
+            .help(settings.saveFolderURL == nil
+                  ? "Save as PNG (⌘S)"
+                  : "Save to \(settings.saveFolderName ?? "the save folder") (⌘S). ⇧⌘S asks where.")
 
-            Button {
-                if document.copyToClipboard() {
-                    closeWindow()
-                }
-            } label: {
+            Button(action: commands.copyAndClose) {
                 Label("Copy & Close", systemImage: "doc.on.clipboard")
             }
             .buttonStyle(.borderedProminent)
             .keyboardShortcut(.return, modifiers: [.command])
+            .help("Copy the image and close (⌘↩)")
         }
         .padding(14)
-    }
-
-    private func savePNG() {
-        let suggestedURL = screenshotManager.suggestedSaveURL()
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [.png]
-        panel.canCreateDirectories = true
-        panel.directoryURL = suggestedURL.deletingLastPathComponent()
-        panel.nameFieldStringValue = suggestedURL.lastPathComponent
-
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        _ = document.save(to: url, copyPath: screenshotManager.copyPathMode)
     }
 }

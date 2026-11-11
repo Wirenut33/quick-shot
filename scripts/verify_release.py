@@ -44,7 +44,9 @@ def validate_app(app: Path, version: str, build: str) -> None:
         if info.get(key) != value:
             raise ValueError(f"Unexpected {key}")
     subprocess.run(["codesign", "--verify", "--deep", "--strict", "-R", REQUIREMENT, str(app)], check=True)
-    subprocess.run(["lipo", str(app / "Contents/MacOS/QuickShot"), "-verify_arch", "arm64", "x86_64"], check=True)
+    # One architecture per call: newer lipo releases reject several after -verify_arch.
+    for arch in ("arm64", "x86_64"):
+        subprocess.run(["lipo", str(app / "Contents/MacOS/QuickShot"), "-verify_arch", arch], check=True)
 
 
 if __name__ == "__main__":

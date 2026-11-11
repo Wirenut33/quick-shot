@@ -1,66 +1,125 @@
 # QuickShot
 
-A lightweight macOS menu bar app for capturing and annotating screenshots.
+A lightweight macOS menu bar app for capturing, marking up and sharing screenshots.
 
 ## Features
 
-- **Capture & Annotate** - Full-screen, selection, and window captures open directly in the editor
-- **Annotation Toggle** - Turn annotation off to copy a capture directly to the clipboard
-- **Minimal Red Markup** - Add rectangles, arrows, lines, and text without a complicated drawing tool
-- **Expandable Canvas** - Add working room around a screenshot and include a written description
-- **Copy & Close** - Copy the annotated PNG to the clipboard in one step
-- **Save to Folder & Copy Path** - Optionally save annotated screenshots to a custom folder and copy the file path
-- **Custom Save Location** - Choose where your screenshots are saved
-- **Launch at Login** - Registers the installed app as an enabled macOS Login Item
+- **Capture from anywhere.** Global keyboard shortcuts for full screen, selection, window and text capture. You choose them; nothing is registered until you accept the suggestions in the welcome guide.
+- **Frozen-screen selection.** The screen freezes the moment you start, so open menus and hover states stay put. A crosshair and a live pixel readout help you select exactly. Press **Space** to pick a window instead, **Esc** to cancel.
+- **Capture Text.** Drag over any area to copy its text, or the contents of a QR code, to the clipboard. Recognition runs on your Mac.
+- **Markup editor.** Rectangle, arrow, line, polyline, highlight, text and redact tools, each with a one-key shortcut. Type labels directly on the image. Every tool remembers its own colour and style.
+- **Redact.** Cover secrets with an opaque fill, or pixelate them when the shape should stay recognisable.
+- **Zoom.** Fit to window, true size, or step in and out.
+- **Save in one step.** Choose a folder once and **⌘S** saves there without asking. Files never overwrite each other.
+- **Snapshot Collection.** Gather several captures, then copy them together as separate attachments or as one image.
+- **Private by design.** No account, no analytics, no uploads. See [PRIVACY.md](PRIVACY.md).
 
 ## Requirements
 
 - macOS 15.0 or later
-- Xcode 15.0 or later
+- Xcode 26 or later to build
+
+## Two builds from one codebase
+
+| | Direct build | App Store build |
+|---|---|---|
+| Scheme | `QuickShot` | `QuickShot-AppStore` |
+| App Sandbox | Off | On |
+| Updates | Sparkle, automatic | Through the App Store |
+| Bundle ID | `com.quickshot.QuickShot` | `com.michaelmorale.QuickShot` |
+
+Both use the same capture engine (ScreenCaptureKit) and the same features. Code that only one build needs is wrapped in `#if !APPSTORE`. The App Store build's `Info.plist`, entitlements and export options live in `AppStore/`. See [docs/APP_STORE.md](docs/APP_STORE.md) for how to submit.
 
 ## Setup
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/Wirenut33/quick-shot.git
-   cd quick-shot
-   ```
+```bash
+git clone https://github.com/Wirenut33/quick-shot.git
+cd quick-shot
+open QuickShot.xcodeproj
+```
 
-2. Open the project in Xcode:
-   ```bash
-   open QuickShot.xcodeproj
-   ```
-
-3. Disable App Sandbox (required for screenshot functionality):
-   - Select the project in Xcode
-   - Go to **Signing & Capabilities** tab
-   - Remove or disable **App Sandbox**
-
-4. Build and run the project (⌘R), or build a Release app and copy it to `/Applications`
-
-5. Grant screen recording permission when prompted (required for screenshot functionality)
+Pick the `QuickShot` scheme and run (⌘R). The welcome guide opens on first launch and walks through Screen Recording permission and shortcuts.
 
 ## Usage
 
-Once running, QuickShot appears as a camera icon in your menu bar. Click it to access:
+QuickShot appears as a camera icon in the menu bar.
 
-- **Capture Full Screen** - Takes a screenshot of the entire screen
-- **Capture Selection** - Lets you draw a rectangle to capture
-- **Capture Window** - Captures the window you click
-- **Annotate Before Copying** - Opens the editor when enabled; copies the screenshot directly to the clipboard when disabled
-- **Save to Folder & Copy Path** - Controls whether saving from the editor also copies the saved PNG path
-- **Save Location** - Click to choose a custom save folder (defaults to Desktop)
-- **Launch at Login** - Enable or disable automatic launch from the menu
+- **Capture Full Screen** captures the display under the pointer.
+- **Capture Selection** lets you drag an area. Press **Space** to switch to picking a window.
+- **Capture Window** starts in window-picking mode.
+- **Capture Text** copies the text in the area you drag over.
+- **Collect Snapshots** keeps captures in the Snapshot Collection instead of the clipboard.
+- **Annotate Before Copying** opens the editor after each capture. Turn it off to copy captures straight to the clipboard.
+- **Settings…** holds the save folder, shortcuts, launch at login and the welcome guide.
 
-In the editor, choose Rectangle, Arrow, Line, Polyline, or Text. All markup is red. Add an optional description, then use **Copy & Close** or **Save PNG**.
+A short on-screen confirmation follows every copy, save and text capture.
+
+### Shortcuts
+
+Global shortcuts are set in the welcome guide or in **Settings › Shortcuts**. The suggestions are **⇧⌘1** for full screen and **⇧⌘2** for selection. QuickShot refuses shortcuts that macOS itself has reserved, and tells you when a shortcut could not be registered.
+
+### Editor
+
+| Key | Action |
+|---|---|
+| V R A L P H T B | Select, Rectangle, Arrow, Line, Polyline, Highlight, Text, Redact |
+| ⌘↩ | Copy and close |
+| ⌘C | Copy (while the canvas has focus) |
+| ⌘S / ⇧⌘S | Save to the chosen folder / choose where to save |
+| ⌘+ ⌘− ⌘0 ⌘1 | Zoom in, zoom out, true size, fit to window |
+| ⌘Z / ⇧⌘Z | Undo / redo |
+| ⌫ | Delete the selected mark |
+| Esc | Cancel the current step, then deselect, then close |
+
+Tool keys work while the canvas has focus; while you type in a label or the description they type text.
+
+- Draw a mark and it becomes selected. Drag it to move it; drag corner handles to resize. Text corner handles resize the font.
+- **Text:** click where the label belongs and type. Return finishes, Esc cancels. Double-click a label to edit it.
+- **Arrow and line:** drag either end to reposition it. Drag an arrow's middle handle to bend it. Slide a line's middle dot along the line, or pull it away to curve the line.
+- **Polyline:** click to add points, or drag to lay down a segment. Double-click or press Return to finish; Delete removes the last point. Switching tools keeps a polyline that has two or more points.
+- **Highlight** draws a translucent area that keeps the content beneath it.
+- **Redact** defaults to an opaque fill, the only style that cannot be read back. Pixelate uses coarse blocks and is meant for faces and shapes, not for secrets.
+- **Esc never discards work by surprise.** If there is unsaved markup, the first Esc says so and a second one closes the window.
+- **Copy Text** reads the image as it will be exported, so redacted text stays out.
+
+### Snapshot Collection
+
+1. Turn on **Collect Snapshots**. The count appears beside the camera.
+2. Capture as often as you like. With **Annotate Before Copying** off, each capture is stored at once. With it on, mark up the capture and choose **Add to Collection**.
+3. Open **Snapshot Collection**, select what you want (⌘-click, Shift-click or Select All) and choose **Copy Selected**.
+4. Paste into another app. QuickShot supplies separate PNG attachments. Apps decide how many they accept; use **Copy as One Image** when an app takes only one.
+
+Snapshots stay on disk across restarts until you remove them (they go to the Trash). **Show Folder** opens them in Finder.
 
 ## Permissions
 
-QuickShot requires **Screen & System Audio Recording** permission to function. Allow it when macOS asks, or enable it manually in:
+QuickShot needs **Screen & System Audio Recording** permission. The welcome guide asks for it; you can also enable it in **System Settings › Privacy & Security › Screen & System Audio Recording**. If macOS offers **Quit & Reopen**, accept it; the welcome guide returns afterwards. On macOS 15 and later the system periodically asks you to confirm that QuickShot may keep capturing the screen. That reminder comes from macOS and applies to every screenshot app.
 
-**System Settings > Privacy & Security > Screen & System Audio Recording > QuickShot**
+Launch at login is off until you turn it on.
 
-QuickShot attempts a capture before diagnosing a permission problem, so an outdated permission preflight result cannot block it. If an enabled permission stops working after replacing the app, quit and reopen QuickShot. To preserve permissions reliably across builds, sign each release with the same Apple Development or Developer ID identity; macOS treats ad-hoc signed rebuilds as different code.
+To keep the permission across rebuilds of the direct build, sign each release with the same identity; macOS treats ad-hoc signed rebuilds as different apps.
+
+## Testing
+
+```bash
+bash scripts/validate.sh
+```
+
+This runs the release-contract tests, the collection, annotation and capture tests, builds the direct app for both architectures, and builds the App Store app ad-hoc signed so the sandbox entitlements that are really in the binary can be checked.
+
+```bash
+bash scripts/live_capture_check.sh
+```
+
+This exercises the real capture path (ScreenCaptureKit, the selection overlay, window picking and text capture) with synthesized input. The terminal running it needs Screen Recording permission, and the overlay flashes on screen while it runs. It is not part of CI.
+
+Debug builds accept `--capture-self-test`, which captures every display and writes `QuickShot-capture-self-test.txt` to the temporary directory. The direct build also accepts `--collection-capture-test`, `--editor-smoke-test` and `--capture-full`. None of these exist in the App Store build.
+
+`xcrun swift scripts/generate_icon.swift QuickShot/Assets.xcassets/AppIcon.appiconset` redraws the app icon at every size.
+
+## Automatic updates (direct build)
+
+The direct build checks for signed updates hourly, downloads them, and installs when no capture or editor is open. **A merge to `main` publishes an update to every installed copy.** See [docs/AUTOMATIC_UPDATES.md](docs/AUTOMATIC_UPDATES.md).
 
 ## Author
 
@@ -69,40 +128,3 @@ Michael Morale
 ## License
 
 MIT License
-
-## Collect several snapshots (1.3)
-
-1. Turn on **Collect Snapshots** in the camera menu. The count appears beside the camera.
-2. Use Capture Selection, Capture Window, or Capture Full Screen repeatedly. With **Annotate Before Copying** off, each capture saves immediately without opening the editor or changing your clipboard. With annotation on, mark up each capture and choose **Add to Collection**.
-3. Open **Snapshot Collection**, select the examples you want (⌘-click / Shift-click, or Select All), and choose **Copy Selected**.
-4. Switch to Codex or another app and press **⌘V**. QuickShot supplies separate PNG/file attachments. Apps decide how many clipboard items they accept; use **Copy as One Image** for a single combined image when needed. Large combined images are scaled to bounded dimensions.
-
-**Copy All Snapshots** is also available directly in the menu. Snapshots remain in `~/Library/Application Support/QuickShot/Snapshots` across restarts until you remove them (to Trash). **Show Folder** opens the PNG files in Finder for dragging or attaching. When **Annotate Before Copying** is enabled, every capture opens the editor first; use **Add to Collection** to keep the marked-up version. Turn annotation off to collect captures immediately without opening the editor. With both options off, captures copy directly to the clipboard.
-
-Use **Annotate** in the collection to edit an example, then **Add to Collection** in the editor to save the annotated version as a new snapshot. The original remains available.
-
-### Collection validation
-
-```sh
-xcrun swiftc -module-cache-path .build/SwiftModuleCache QuickShot/SnapshotCollection.swift Tests/CollectionTests.swift -o .build/collection-tests
-.build/collection-tests
-```
-
-Run tests with normal macOS pasteboard access. The tests use a private pasteboard and temporary images. For installed-app capture validation, launch with `--collection-capture-test`; it captures the screen, verifies two persistent images and two private clipboard attachments, opens a diagnostic collection, and writes `QuickShot-collection-test.txt` in the app's temporary directory.
-
-## Automatic updates (1.4+)
-
-QuickShot checks for signed updates hourly, downloads them automatically, and installs when captures and annotation work are finished. **Automatic Updates** and **Check for Updates…** are available in the camera menu. **Check for Updates…** is also in the QuickShot application menu and Settings, where the installed version is shown. A merge to `main` triggers tests and a signed universal release for Apple Silicon and Intel Macs.
-
-The first rollout needs the one-time bootstrap install and GitHub signing-secret setup. See [Automatic updates](docs/AUTOMATIC_UPDATES.md) for setup, verification, and recovery.
-
-## Editing annotations
-
-- Draw a Rectangle, Arrow, Line, Polyline, Highlight, or Text label. New marks become selected automatically.
-- Line draws a straight segment by dragging. Polyline adds a point per click (or a segment per drag); double-click or press Return to finish, Delete removes the last point, and Escape cancels. Switching tools keeps a polyline that already has two or more points.
-- Use Select to choose an existing mark. Drag it to move it; drag rectangle/highlight corners to resize. Text corner handles resize the font.
-- Select an arrow and drag either endpoint to reposition it, or its middle handle to bend the curve. Select a line and drag either end to move it, or its middle dot to slide it along the line or pull it off the line to curve it (the line stays straight while the dot is on it). Select a polyline and drag any point to reshape it.
-- Set Color, Stroke (Thin/Medium/Thick), or Dashed for new or selected shapes. Text supports size 12–144 and Bold; use Apply Text to change a selected label.
-- Highlight draws a translucent colored area (yellow by default), preserving the content beneath it.
-- Undo/Redo cover drawing, moving, resizing, bending, styling, text edits, deletion, and Clear. Delete removes the selected mark; Escape deselects it when the canvas has focus.
-- Copy, PNG export, and Add to Collection include the final styling, without selection handles.

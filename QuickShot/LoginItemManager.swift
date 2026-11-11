@@ -18,17 +18,6 @@ final class LoginItemManager {
         SMAppService.mainApp.status == .requiresApproval
     }
 
-    func ensureEnabled() throws {
-        switch SMAppService.mainApp.status {
-        case .enabled, .requiresApproval:
-            return
-        case .notRegistered, .notFound:
-            try SMAppService.mainApp.register()
-        @unknown default:
-            try SMAppService.mainApp.register()
-        }
-    }
-
     func setEnabled(_ enabled: Bool) throws {
         if enabled {
             switch SMAppService.mainApp.status {
