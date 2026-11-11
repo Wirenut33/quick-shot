@@ -301,10 +301,10 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             collectionWindow?.window?.orderOut(nil)
             HUD.dismiss()
             Task { @MainActor [weak self] in
-                if afterMenu { try? await Task.sleep(nanoseconds: 250_000_000) }
                 guard let self else { return }
                 do {
-                    try await self.recordingController.start(action)
+                    // Let the menu finish closing so it is not in the first frame.
+                    try await self.recordingController.start(action, after: afterMenu ? 0.25 : 0)
                 } catch {
                     self.handleRecordingError(error)
                 }
@@ -411,6 +411,28 @@ final class StatusBarController: NSObject, NSMenuDelegate {
            let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(pane)") {
             NSWorkspace.shared.open(url)
         }
+    }
+
+    /// Quitting skips each window's own close check, so unsaved recordings are offered
+    /// here instead: discard them and quit, or keep working.
+    func shouldTerminate() -> NSApplication.TerminateReply {
+        let unsaved = videoEditors.filter(\.hasUnsavedRecording)
+        guard !unsaved.isEmpty else { return .terminateNow }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = unsaved.count == 1
+            ? "Quit and discard a recording?"
+            : "Quit and discard \(unsaved.count) recordings?"
+        alert.informativeText = unsaved.count == 1
+            ? "A recording has not been copied or saved."
+            : "These recordings have not been copied or saved."
+        alert.addButton(withTitle: "Discard and Quit")
+        alert.addButton(withTitle: "Cancel")
+        alert.buttons.first?.hasDestructiveAction = true
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return .terminateCancel }
+        unsaved.forEach { $0.discardAndClose() }
+        return .terminateNow
     }
 
     private func openVideoEditor(for url: URL) {

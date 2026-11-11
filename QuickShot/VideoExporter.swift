@@ -34,7 +34,7 @@ nonisolated enum VideoExporter {
     /// Writes the trimmed recording as a QuickTime movie without re-encoding the video.
     /// Several audio tracks, such as system audio and the microphone, are mixed into one,
     /// because many players and web apps play only the first.
-    nonisolated static func exportMovie(from source: URL, edit: VideoEdit, to destination: URL) async throws {
+    @concurrent nonisolated static func exportMovie(from source: URL, edit: VideoEdit, to destination: URL) async throws {
         let asset = AVURLAsset(url: source)
         let range = try await timeRange(of: asset, start: edit.start, end: edit.end)
         guard let sourceVideo = try await asset.loadTracks(withMediaType: .video).first else { throw VideoExportError.noVideo }
@@ -43,9 +43,24 @@ nonisolated enum VideoExporter {
         guard let video = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else {
             throw VideoExportError.failed("QuickShot could not prepare the movie.")
         }
-        let videoRange = try await sourceVideo.load(.timeRange).intersection(range)
-        guard !videoRange.isEmpty else { throw VideoExportError.emptyRange }
-        try video.insertTimeRange(videoRange, of: sourceVideo, at: videoRange.start - range.start)
+        // ScreenCaptureKit adds a frame only when the picture changes, so after the last
+        // change the video track can end long before the sound does. That still stretch
+        // is filled by holding the last frame, so every part of the selection has a picture.
+        let trackRange = try await sourceVideo.load(.timeRange)
+        guard !trackRange.isEmpty else { throw VideoExportError.noVideo }
+        let videoRange = trackRange.intersection(range)
+        var covered = CMTime.zero
+        if !videoRange.isEmpty {
+            try video.insertTimeRange(videoRange, of: sourceVideo, at: videoRange.start - range.start)
+            covered = videoRange.end - range.start
+        }
+        let missing = range.duration - covered
+        if missing > CMTime(value: 1, timescale: 1_000) {
+            let lastFrame = CMTimeRange(start: CMTimeMaximum(trackRange.start, trackRange.end - CMTime(value: 1, timescale: 60)),
+                                        end: trackRange.end)
+            try video.insertTimeRange(lastFrame, of: sourceVideo, at: covered)
+            video.scaleTimeRange(CMTimeRange(start: covered, duration: lastFrame.duration), toDuration: missing)
+        }
         video.preferredTransform = try await sourceVideo.load(.preferredTransform)
 
         var audioTracks: [AVMutableCompositionTrack] = []
@@ -141,7 +156,7 @@ nonisolated enum VideoExporter {
 
     /// Writes the trimmed recording as a looping GIF. Frames that do not change are merged
     /// into one longer frame, which keeps screen recordings small.
-    nonisolated static func exportGIF(
+    @concurrent nonisolated static func exportGIF(
         from source: URL,
         start: Double,
         end: Double,
@@ -153,6 +168,8 @@ nonisolated enum VideoExporter {
         let asset = AVURLAsset(url: source)
         let range = try await timeRange(of: asset, start: start, end: end)
         guard let track = try await asset.loadTracks(withMediaType: .video).first else { throw VideoExportError.noVideo }
+        // Past the video's last frame the screen was still, so the last frame is what was shown.
+        let lastFrameTime = try await track.load(.timeRange).end.seconds - 0.001
         let natural = try await track.load(.naturalSize).applying(track.load(.preferredTransform))
         let size = RecordingGeometry.gifSize(natural: CGSize(width: abs(natural.width), height: abs(natural.height)), maxWidth: maxWidth)
         let times = RecordingGeometry.frameTimes(start: range.start.seconds, duration: range.duration.seconds, frameRate: frameRate)
@@ -173,10 +190,13 @@ nonisolated enum VideoExporter {
             kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFLoopCount: 0]
         ] as CFDictionary)
 
-        let frameDelay = 1 / Double(frameRate)
-        var pending: (image: CGImage, pixels: Data?, delay: Double)?
-        func write(_ frame: (image: CGImage, pixels: Data?, delay: Double)) {
-            let delay = (frame.delay * 100).rounded() / 100
+        // Each frame is held from its own sample time until the next different frame, and
+        // the last one until the end of the selection, so the GIF lasts exactly as long.
+        let clipStart = range.start.seconds
+        let clipLength = range.duration.seconds
+        var pending: (image: CGImage, pixels: Data?, offset: Double)?
+        func write(_ frame: (image: CGImage, pixels: Data?, offset: Double), until end: Double) {
+            let delay = RecordingGeometry.gifDelay(from: frame.offset, to: end)
             CGImageDestinationAddImage(output, frame.image, [
                 kCGImagePropertyGIFDictionary: [
                     kCGImagePropertyGIFDelayTime: delay,
@@ -189,21 +209,26 @@ nonisolated enum VideoExporter {
             try Task.checkCancellation()
             let image: CGImage
             do {
-                image = try await generator.image(at: CMTime(seconds: seconds, preferredTimescale: 6_000)).image
+                image = try await generator.image(at: CMTime(seconds: min(seconds, lastFrameTime), preferredTimescale: 6_000)).image
             } catch {
                 throw VideoExportError.failed(error.localizedDescription)
             }
             let pixels = image.dataProvider?.data as Data?
-            if var current = pending, let pixels, let previous = current.pixels, looksIdentical(previous, pixels) {
-                current.delay += frameDelay
-                pending = current
+            let offset = seconds - clipStart
+            // An unchanged frame simply extends the one before it.
+            let unchanged: Bool
+            if let previous = pending?.pixels, let pixels {
+                unchanged = looksIdentical(previous, pixels)
             } else {
-                if let pending { write(pending) }
-                pending = (image, pixels, frameDelay)
+                unchanged = false
+            }
+            if !unchanged {
+                if let pending { write(pending, until: offset) }
+                pending = (image, pixels, offset)
             }
             progress(Double(index + 1) / Double(times.count))
         }
-        if let pending { write(pending) }
+        if let pending { write(pending, until: clipLength) }
 
         guard CGImageDestinationFinalize(output) else {
             throw VideoExportError.failed("QuickShot could not finish the GIF file.")
@@ -231,7 +256,7 @@ nonisolated enum VideoExporter {
     }
 
     /// The recording's length in seconds.
-    nonisolated static func duration(of url: URL) async throws -> Double {
+    @concurrent nonisolated static func duration(of url: URL) async throws -> Double {
         try await AVURLAsset(url: url).load(.duration).seconds
     }
 

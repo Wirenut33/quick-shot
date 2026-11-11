@@ -79,9 +79,11 @@ nonisolated enum RecordingGeometry {
     }
 
     /// The camera bubble starts in the bottom-right corner of the recorded area, inset so
-    /// it does not touch the edge, and shrinks to fit a small area.
+    /// it does not touch the edge, and shrinks to fit a small area. It is never larger than
+    /// the area, so it is always fully recorded.
     static func cameraBubbleFrame(in region: CGRect, preferredDiameter: CGFloat = 180, inset: CGFloat = 24) -> CGRect {
-        let diameter = max(60, min(preferredDiameter, min(region.width, region.height) * 0.4))
+        let fit = min(region.width, region.height)
+        let diameter = min(fit, max(60, min(preferredDiameter, fit * 0.4)))
         let margin = min(inset, max(0, (min(region.width, region.height) - diameter) / 2))
         return CGRect(x: region.maxX - diameter - margin, y: region.minY + margin, width: diameter, height: diameter)
     }
@@ -102,6 +104,15 @@ nonisolated enum RecordingGeometry {
         guard duration > 0, frameRate > 0 else { return [] }
         let count = max(1, Int((duration * Double(frameRate)).rounded(.down)))
         return (0..<count).map { start + Double($0) / Double(frameRate) }
+    }
+
+    /// How long a GIF frame shown from `start` to `end` (seconds into the clip) is held.
+    /// GIF delays are whole hundredths of a second, so the boundaries are rounded rather
+    /// than each delay: rounding every 1/15 s frame to 0.07 s would make a 10 s clip
+    /// play for 10.5 s.
+    static func gifDelay(from start: Double, to end: Double) -> Double {
+        let hundredths = Int((end * 100).rounded()) - Int((start * 100).rounded())
+        return Double(max(1, hundredths)) / 100
     }
 
     /// "0:07", "12:30", "1:02:03".

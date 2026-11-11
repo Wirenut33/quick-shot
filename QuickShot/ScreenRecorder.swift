@@ -49,6 +49,7 @@ final class ScreenRecorder {
 
     private var stream: SCStream?
     private var events: RecordingEvents?
+    private var output: SCRecordingOutput?
     private var finished = false
     private var finishWaiters: [CheckedContinuation<Void, Never>] = []
     private var failure: Error?
@@ -96,6 +97,7 @@ final class ScreenRecorder {
             if request.systemAudio { try stream.addStreamOutput(events, type: .audio, sampleHandlerQueue: sampleQueue) }
             if request.microphone { try stream.addStreamOutput(events, type: .microphone, sampleHandlerQueue: sampleQueue) }
             try stream.addRecordingOutput(output)
+            self.output = output
             self.stream = stream
             try await stream.startCapture()
         } catch {
@@ -107,9 +109,14 @@ final class ScreenRecorder {
     /// Ends the recording and returns once the movie file is complete.
     func stop() async throws -> URL {
         if let stream, !finished {
+            // Removing the recording output is what finishes the movie file;
+            // ScreenCaptureKit confirms with recordingOutputDidFinishRecording.
+            if let output { try? stream.removeRecordingOutput(output) }
+            await waitForFinish(timeout: 5)
             try? await stream.stopCapture()
         }
         stream = nil
+        output = nil
         await waitForFinish(timeout: 5)
         if let failure { throw Self.classify(failure) }
         guard FileManager.default.fileExists(atPath: outputURL.path) else {
@@ -146,8 +153,10 @@ final class ScreenRecorder {
             finishWaiters.append(continuation)
             Task { @MainActor [weak self] in
                 try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
-                // The file may already be complete even if the callback never comes.
-                self?.recordingFinished(nil)
+                // Without ScreenCaptureKit's confirmation the file may be incomplete, so a
+                // timeout is a failure rather than a finished movie.
+                guard let self, !self.finished else { return }
+                self.recordingFinished(RecordingError.failed("The recording did not finish saving. Try recording again."))
             }
         }
     }

@@ -38,6 +38,16 @@ struct RecordingTests {
         precondition(bubble == CGRect(x: 896, y: 124, width: 180, height: 180), "\(bubble)")
         let small = RecordingGeometry.cameraBubbleFrame(in: CGRect(x: 0, y: 0, width: 200, height: 160))
         precondition(region.contains(bubble) && CGRect(x: 0, y: 0, width: 200, height: 160).contains(small) && small.width == 64, "\(small)")
+        // An area smaller than the minimum bubble still holds the whole bubble.
+        let tiny = CGRect(x: 10, y: 10, width: 40, height: 30)
+        let tinyBubble = RecordingGeometry.cameraBubbleFrame(in: tiny)
+        precondition(tiny.contains(tinyBubble) && tinyBubble.width == 30, "\(tinyBubble)")
+
+        // GIF delays round the frame boundaries, not each delay, so the length stays exact.
+        let fifteen = (0..<150).map { RecordingGeometry.gifDelay(from: Double($0) / 15, to: Double($0 + 1) / 15) }
+        precondition(abs(fifteen.reduce(0, +) - 10) < 0.001, "150 frames at 15 fps must last 10 s, got \(fifteen.reduce(0, +))")
+        precondition(RecordingGeometry.gifDelay(from: 0, to: 0.05) == 0.05)
+        precondition(RecordingGeometry.gifDelay(from: 0.5, to: 0.5) == 0.01, "A frame is never held for zero time")
 
         // GIF frames keep the aspect ratio and are never enlarged.
         precondition(RecordingGeometry.gifSize(natural: CGSize(width: 1_600, height: 900), maxWidth: 800) == CGSize(width: 800, height: 450))
@@ -123,7 +133,36 @@ struct RecordingTests {
         }
         precondition(abs(total - 1) < 0.05, "GIF frame delays add up to \(total)s")
 
-        print("PASS: recording geometry and timecodes, trimmed MOV with mixed audio, muted MOV, empty range refused, deduplicated looping GIF")
+        // ScreenCaptureKit stops adding frames while the screen is still, so the video can
+        // end long before the sound. Every exported part must still have a picture.
+        let stillSource = folder.appendingPathComponent("still.mov")
+        try await SyntheticRecording.write(to: stillSource, seconds: 2, frameRate: 10, audioTracks: 1, videoFrames: 3)
+        let stillVideo = try await AVURLAsset(url: stillSource).loadTracks(withMediaType: .video).first!.load(.timeRange).end.seconds
+        precondition(stillVideo < 0.5, "The fixture's video must stop early, ends at \(stillVideo)s")
+        for (label, edit) in [("after the last frame", VideoEdit(start: 1, end: 1.8, includesAudio: true)),
+                              ("across the last frame, muted", VideoEdit(start: 0.1, end: 1.5, includesAudio: false))] {
+            let output = folder.appendingPathComponent("still-\(UUID().uuidString).mov")
+            try await VideoExporter.exportMovie(from: stillSource, edit: edit, to: output)
+            let exported = AVURLAsset(url: output)
+            let length = try await exported.load(.duration).seconds
+            let videoLength = try await exported.loadTracks(withMediaType: .video).first!.load(.timeRange).duration.seconds
+            let expected = edit.end - edit.start
+            precondition(abs(length - expected) < 0.1 && abs(videoLength - expected) < 0.1,
+                         "\(label): movie \(length)s, video \(videoLength)s, expected \(expected)s")
+        }
+        let stillGIF = folder.appendingPathComponent("still.gif")
+        try await VideoExporter.exportGIF(from: stillSource, start: 1, end: 1.5, frameRate: 10, maxWidth: 160, to: stillGIF)
+        precondition(CGImageSourceCreateWithURL(stillGIF as CFURL, nil).map(CGImageSourceGetCount) ?? 0 >= 1)
+
+        // A selection shorter than one frame interval lasts as long as the selection.
+        let short = folder.appendingPathComponent("short.gif")
+        try await VideoExporter.exportGIF(from: source, start: 0, end: 0.05, frameRate: 10, maxWidth: 160, to: short)
+        guard let shortSource = CGImageSourceCreateWithURL(short as CFURL, nil) else { preconditionFailure("No short GIF") }
+        let shortFrame = CGImageSourceCopyPropertiesAtIndex(shortSource, 0, nil) as? [CFString: Any]
+        let shortDelay = ((shortFrame?[kCGImagePropertyGIFDictionary] as? [CFString: Any])?[kCGImagePropertyGIFUnclampedDelayTime] as? Double) ?? 0
+        precondition(CGImageSourceGetCount(shortSource) == 1 && abs(shortDelay - 0.05) < 0.001, "Short GIF lasts \(shortDelay)s")
+
+        print("PASS: recording geometry and timecodes, trimmed MOV with mixed audio, muted MOV, empty range refused, deduplicated looping GIF, still stretches keep their picture")
     }
 }
 
@@ -133,7 +172,9 @@ final class ProgressBox: @unchecked Sendable {
 
 /// Writes a small H.264 movie with solid-colour frames and sine-wave audio tracks.
 enum SyntheticRecording {
-    static func write(to url: URL, seconds: Int, frameRate: Int, audioTracks: Int) async throws {
+    /// `videoFrames` shorter than the sound mimics ScreenCaptureKit, which stops adding
+    /// frames while the screen is still.
+    static func write(to url: URL, seconds: Int, frameRate: Int, audioTracks: Int, videoFrames: Int? = nil) async throws {
         let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
         let width = 320, height = 180
         let video = AVAssetWriterInput(mediaType: .video, outputSettings: [
@@ -163,8 +204,28 @@ enum SyntheticRecording {
         let colours: [(UInt8, UInt8, UInt8)] = [(220, 40, 40), (40, 180, 60), (40, 80, 220), (230, 200, 30)]
         let totalSamples = Int(sampleRate) * seconds
         var audioWritten = 0
+        func writeAudio(upTo audioTarget: Int) async throws {
+            if audioTarget > audioWritten {
+                for (track, audio) in audioInputs.enumerated() {
+                    let frequency = 440.0 * Double(track + 1)
+                    var samples = [Int16](repeating: 0, count: audioTarget - audioWritten)
+                    for offset in samples.indices {
+                        samples[offset] = Int16(8_000 * sin(2 * .pi * frequency * Double(audioWritten + offset) / sampleRate))
+                    }
+                    try await waitUntilReady(audio)
+                    audio.append(try pcmBuffer(samples, at: audioWritten, sampleRate: sampleRate))
+                }
+                audioWritten = audioTarget
+            }
+        }
         // The writer interleaves tracks, so audio and video advance together.
+        let frames = min(videoFrames ?? seconds * frameRate, seconds * frameRate)
         for index in 0..<(seconds * frameRate) {
+            if index == frames { video.markAsFinished() }
+            guard index < frames else {
+                try await writeAudio(upTo: min(totalSamples, Int(sampleRate) * (index + 1) / frameRate))
+                continue
+            }
             try await waitUntilReady(video)
             var buffer: CVPixelBuffer?
             CVPixelBufferPoolCreatePixelBuffer(nil, adaptor.pixelBufferPool!, &buffer)
@@ -183,21 +244,9 @@ enum SyntheticRecording {
             CVPixelBufferUnlockBaseAddress(buffer, [])
             adaptor.append(buffer, withPresentationTime: CMTime(value: CMTimeValue(index), timescale: CMTimeScale(frameRate)))
 
-            let audioTarget = min(totalSamples, Int(sampleRate) * (index + 1) / frameRate)
-            if audioTarget > audioWritten {
-                for (track, audio) in audioInputs.enumerated() {
-                    let frequency = 440.0 * Double(track + 1)
-                    var samples = [Int16](repeating: 0, count: audioTarget - audioWritten)
-                    for offset in samples.indices {
-                        samples[offset] = Int16(8_000 * sin(2 * .pi * frequency * Double(audioWritten + offset) / sampleRate))
-                    }
-                    try await waitUntilReady(audio)
-                    audio.append(try pcmBuffer(samples, at: audioWritten, sampleRate: sampleRate))
-                }
-                audioWritten = audioTarget
-            }
+            try await writeAudio(upTo: min(totalSamples, Int(sampleRate) * (index + 1) / frameRate))
         }
-        video.markAsFinished()
+        if frames == seconds * frameRate { video.markAsFinished() }
         audioInputs.forEach { $0.markAsFinished() }
         await writer.finishWriting()
         if writer.status != .completed { throw writer.error ?? VideoExportError.failed("writer") }

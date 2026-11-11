@@ -6,12 +6,16 @@ import sys
 from pathlib import Path
 
 DIRECT_BUNDLE_ID = "com.quickshot.QuickShot"
-REQUIRED_ENTITLEMENTS = {"com.apple.security.app-sandbox": True}
+REQUIRED_ENTITLEMENTS = {
+    "com.apple.security.app-sandbox": True,
+    # Screen recordings with the microphone and the camera bubble.
+    "com.apple.security.device.audio-input": True,
+    "com.apple.security.device.camera": True,
+}
 ALLOWED_ENTITLEMENTS = {
     "com.apple.security.app-sandbox",
     "com.apple.security.files.bookmarks.app-scope",
     "com.apple.security.files.user-selected.read-write",
-    # Screen recordings with the microphone and the camera bubble.
     "com.apple.security.device.audio-input",
     "com.apple.security.device.camera",
     # Added by Apple at distribution signing.

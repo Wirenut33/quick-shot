@@ -54,7 +54,11 @@ class ReleaseTests(unittest.TestCase):
         appstore.validate_entitlements(sandboxed)
         for bad in [{}, {"com.apple.security.app-sandbox": False},
                     {**sandboxed, "com.apple.security.network.client": True},
-                    {**sandboxed, "com.apple.security.get-task-allow": True}]:
+                    {**sandboxed, "com.apple.security.get-task-allow": True},
+                    {**sandboxed, "com.apple.security.device.camera": False},
+                    {**sandboxed, "com.apple.security.device.audio-input": False},
+                    {key: value for key, value in sandboxed.items() if key != "com.apple.security.device.camera"},
+                    {key: value for key, value in sandboxed.items() if key != "com.apple.security.device.audio-input"}]:
             with self.assertRaises(ValueError):
                 appstore.validate_entitlements(bad)
         info = {"CFBundleIdentifier": "com.michaelmorale.QuickShot", "ITSAppUsesNonExemptEncryption": False,

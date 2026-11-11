@@ -32,6 +32,8 @@ final class RecordingController {
     private var frame: RecordingFrame?
     private var overlay: SelectionOverlayController?
     private var cancelRequested = false
+    /// macOS ended the stream before `start` finished.
+    private var interruptedDuringStart = false
 
     /// Recordings wait here until the editor exports or discards them.
     static var recordingsFolder: URL {
@@ -55,12 +57,16 @@ final class RecordingController {
     }
 
     /// Returns once recording has begun. Throws `ScreenshotError.cancelled` if the user
-    /// backs out before then.
-    func start(_ action: CaptureAction) async throws {
+    /// backs out before then. The state leaves `.idle` at once, before `delay`, so a second
+    /// press of the shortcut during the delay cancels instead of starting twice.
+    func start(_ action: CaptureAction, after delay: TimeInterval = 0) async throws {
         guard state == .idle else { return }
         state = .preparing
         cancelRequested = false
+        interruptedDuringStart = false
         do {
+            if delay > 0 { try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) }
+            try checkCancelled()
             try await begin(action)
         } catch {
             cleanUp()
@@ -112,7 +118,7 @@ final class RecordingController {
         try FileManager.default.createDirectory(at: Self.recordingsFolder, withIntermediateDirectories: true)
         let url = AppSettings.uniqueFileURL(in: Self.recordingsFolder, base: AppSettings.recordingBaseName(), fileExtension: "mov")
         let recorder = ScreenRecorder(outputURL: url)
-        recorder.onInterrupted = { [weak self] in self?.onInterrupted?() }
+        recorder.onInterrupted = { [weak self] in self?.recorderInterrupted() }
         self.recorder = recorder
         try await recorder.start(RecordingRequest(
             display: display,
@@ -123,14 +129,30 @@ final class RecordingController {
             showsClicks: settings.recordShowsClicks
         ))
         try checkCancelled()
+        if interruptedDuringStart {
+            throw RecordingError.failed("macOS stopped the recording as it started. Try again.")
+        }
         state = .recording(since: Date())
+    }
+
+    /// An interruption while starting is held until `start` settles, which then fails,
+    /// so the menu bar never shows a recording that has already stopped.
+    private func recorderInterrupted() {
+        if isRecording {
+            onInterrupted?()
+        } else {
+            interruptedDuringStart = true
+        }
     }
 
     /// Freezes the screen so the user can drag an area or pick a window, as for a screenshot.
     private func chooseRegion(in content: SCShareableContent) async throws -> (SCDisplay, CGRect) {
         guard !content.displays.isEmpty else { throw ScreenshotError.noDisplay }
+        let displays = try await CaptureEngine.captureAll(content.displays)
+        // A cancel while the screen was being frozen must not open the overlay.
+        try checkCancelled()
         let controller = SelectionOverlayController(
-            displays: try await CaptureEngine.captureAll(content.displays),
+            displays: displays,
             windows: CaptureEngine.windowCandidates(in: content),
             mode: .area,
             areaHint: "Drag over the area to record",

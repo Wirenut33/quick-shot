@@ -48,7 +48,7 @@ These need a signed build on a real Mac and could not be run during development.
 - [ ] Choose a save folder, quit, relaunch, and press ⌘S in the editor. The file must appear without a dialog. This proves the security-scoped bookmark survives a relaunch.
 - [ ] Remove that folder in Finder and press ⌘S. A save dialog must appear.
 - [ ] Copy several snapshots from the collection and paste them into Mail, Messages and a sandboxed app such as Notes.
-- [ ] Record Screen and Record Selection with Microphone, System Audio and Camera each on and off. Confirm the microphone and camera prompts appear only when those are turned on, the camera bubble is in the movie, and the stop button in the menu bar ends the recording.
+- [ ] Record Screen and Record Selection with Microphone, System Audio and Camera each on and off. Confirm the microphone and camera prompts appear only when a recording starts with those turned on, the camera bubble is in the movie, and the stop button in the menu bar ends the recording.
 - [ ] In the recording editor, trim, turn Sound off, and save as MOV and as GIF with ⌘S; copy a GIF and paste it into Messages and Notes. Development testing covered recording, trimming and GIF copy live without the microphone and camera; those two were not tested live.
 - [ ] Turn on Open at Login, log out and in, and confirm QuickShot starts.
 - [ ] Turn on VoiceOver and move through the welcome window, Settings and the editor toolbar.
@@ -61,7 +61,7 @@ These need a signed build on a real Mac and could not be run during development.
 >
 > To test: click the camera icon and choose Capture Selection, then drag over part of the screen. The editor opens. Draw with any tool, then click Copy & Close and paste into any app. Capture Text copies the text in the selected area using on-device recognition.
 >
-> To test recording: choose Record Selection, drag over an area, and wait for the 3-second countdown. Click the red stop button in the menu bar to finish. The recording opens for trimming and export as a movie or GIF. Microphone and Camera are off by default; turning either on in the menu asks for that permission. The camera appears in a round bubble on screen, which the recording includes.
+> To test recording: choose Record Selection, drag over an area, and wait for the 3-second countdown. Click the red stop button in the menu bar to finish. The recording opens for trimming and export as a movie or GIF. Microphone and Camera are off by default. Turning either on in the menu only changes the setting; macOS asks for that permission when the next recording starts, and only if it has not been answered before. The camera appears in a round bubble on screen, which the recording includes.
 >
 > No account is needed. The app makes no network connections and collects no data. Launch at login is off by default and is controlled by a switch in Settings.
 
