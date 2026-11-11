@@ -164,20 +164,35 @@ final class AppSettings: ObservableObject {
     /// Runs `body` with permission to write in the chosen folder. Returns nil when no
     /// folder is set or it can no longer be reached, so the caller can ask with a save panel.
     func withSaveFolder<T>(_ body: (URL) throws -> T) rethrows -> T? {
+        guard let folder = openSaveFolder() else { return nil }
+        defer { if folder.scoped { folder.url.stopAccessingSecurityScopedResource() } }
+        return try body(folder.url)
+    }
+
+    /// The same, for work that waits, such as copying a large file off the main thread.
+    /// Permission lasts until `body` finishes.
+    func withSaveFolder<T>(_ body: (URL) async throws -> T) async rethrows -> T? {
+        guard let folder = openSaveFolder() else { return nil }
+        defer { if folder.scoped { folder.url.stopAccessingSecurityScopedResource() } }
+        return try await body(folder.url)
+    }
+
+    /// Starts access to the chosen folder. The caller stops it when `scoped` is true.
+    private func openSaveFolder() -> (url: URL, scoped: Bool)? {
         guard let resolved = resolveSaveFolder() else {
             if saveFolderURL != nil { saveFolderURL = nil }
             return nil
         }
         let scoped = resolved.url.startAccessingSecurityScopedResource()
-        defer { if scoped { resolved.url.stopAccessingSecurityScopedResource() } }
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: resolved.url.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+            if scoped { resolved.url.stopAccessingSecurityScopedResource() }
             return nil
         }
         if resolved.stale, let fresh = Self.makeBookmark(for: resolved.url) {
             defaults.set(fresh, forKey: Key.folderBookmark)
         }
-        return try body(resolved.url)
+        return (resolved.url, scoped)
     }
 
     private func resolveSaveFolder() -> (url: URL, stale: Bool)? {

@@ -189,6 +189,14 @@ final class RecordingController {
         RecordingCountdown.cancel()
     }
 
+    /// Gives up a recording at Quit, at any stage, after the user has agreed to lose it.
+    /// The process is ending, so this does not wait for ScreenCaptureKit.
+    func abandon() {
+        cancel()
+        cleanUp()
+        if let recorder { try? FileManager.default.removeItem(at: recorder.outputURL) }
+    }
+
     private func checkCancelled() throws {
         if cancelRequested { throw ScreenshotError.cancelled }
     }

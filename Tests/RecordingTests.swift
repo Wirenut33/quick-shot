@@ -149,6 +149,15 @@ struct RecordingTests {
             let expected = edit.end - edit.start
             precondition(abs(length - expected) < 0.1 && abs(videoLength - expected) < 0.1,
                          "\(label): movie \(length)s, video \(videoLength)s, expected \(expected)s")
+            // The held picture really is there: near the end, the fixture's last frame (red).
+            let generator = AVAssetImageGenerator(asset: exported)
+            generator.requestedTimeToleranceBefore = .zero
+            generator.requestedTimeToleranceAfter = .zero
+            let requested = CMTime(seconds: expected - 0.1, preferredTimescale: 600)
+            // A held frame reports the time it starts showing, so only the picture is checked.
+            let frame = try await generator.image(at: requested).image
+            let pixel = centrePixel(frame)
+            precondition(pixel.red > 170 && pixel.green < 90 && pixel.blue < 90, "\(label): held frame is not the last picture: \(pixel)")
         }
         let stillGIF = folder.appendingPathComponent("still.gif")
         try await VideoExporter.exportGIF(from: stillSource, start: 1, end: 1.5, frameRate: 10, maxWidth: 160, to: stillGIF)
@@ -164,6 +173,17 @@ struct RecordingTests {
 
         print("PASS: recording geometry and timecodes, trimmed MOV with mixed audio, muted MOV, empty range refused, deduplicated looping GIF, still stretches keep their picture")
     }
+}
+
+/// The colour at the middle of an image, as 8-bit RGB.
+func centrePixel(_ image: CGImage) -> (red: Int, green: Int, blue: Int) {
+    var bytes = [UInt8](repeating: 0, count: 4)
+    let context = CGContext(data: &bytes, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                            space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+    let x = CGFloat(image.width / 2), y = CGFloat(image.height / 2)
+    context.draw(image, in: CGRect(x: -x, y: -y, width: CGFloat(image.width), height: CGFloat(image.height)))
+    return (Int(bytes[0]), Int(bytes[1]), Int(bytes[2]))
 }
 
 final class ProgressBox: @unchecked Sendable {

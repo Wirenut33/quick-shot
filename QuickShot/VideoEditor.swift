@@ -20,7 +20,9 @@ final class VideoEditorModel: ObservableObject {
     @Published private(set) var trimEnd: Double = 0
     @Published private(set) var hasAudio = false
     @Published var includesAudio = true
-    @Published private(set) var isExporting = false
+    /// A Copy or Save is running. Only one runs at a time, and the window stays open
+    /// until it ends, because it is still reading the recording.
+    @Published private(set) var isBusy = false
     /// The player view's trim handles are showing; its own Trim and Cancel buttons apply.
     @Published private(set) var isTrimming = false
     /// Nil while exporting means the progress is unknown.
@@ -138,10 +140,9 @@ final class VideoEditorModel: ObservableObject {
         exportFolders.append(folder)
         let destination = folder.appendingPathComponent(baseName).appendingPathExtension(format.fileExtension)
 
-        isExporting = true
         progress = format == .gif ? 0 : nil
         statusMessage = format == .gif ? "Making GIF…" : "Exporting movie…"
-        defer { isExporting = false; progress = nil }
+        defer { progress = nil }
         do {
             switch format {
             case .mov:
@@ -166,6 +167,18 @@ final class VideoEditorModel: ObservableObject {
     }
 
     func markSaved() { hasUnsavedChanges = false }
+
+    /// Claims the editor for one Copy or Save. Returns false while another is running.
+    func beginWork() -> Bool {
+        guard isLoaded, !isBusy else { return false }
+        isBusy = true
+        return true
+    }
+
+    func endWork() {
+        isBusy = false
+        progress = nil
+    }
 
     /// Deletes this editor's exports, except a file the clipboard still offers for pasting.
     func removeExports() {
@@ -219,7 +232,7 @@ struct VideoEditorView: View {
             }
             .padding(12)
             // While trimming, Return and Esc belong to the player's Trim and Cancel buttons.
-            .disabled(model.isExporting || model.isTrimming)
+            .disabled(model.isBusy || model.isTrimming)
         }
     }
 
@@ -270,7 +283,7 @@ struct VideoEditorView: View {
         HStack(spacing: 10) {
             Button("Close", action: commands.close)
                 .keyboardShortcut(.cancelAction)
-            if model.isExporting {
+            if model.isBusy {
                 if let progress = model.progress {
                     ProgressView(value: progress).frame(width: 90)
                 } else {
@@ -372,9 +385,9 @@ final class VideoEditorWindowController: NSWindowController, NSWindowDelegate {
     /// A recording that was never copied or saved is not thrown away without asking, and
     /// the window stays open while an export is still reading the recording.
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        if model.isExporting {
+        if model.isBusy {
             NSSound.beep()
-            model.statusMessage = "Wait for the export to finish, then close."
+            model.statusMessage = "Wait for the copy or save to finish, then close."
             return false
         }
         guard model.hasUnsavedChanges, !discardConfirmed else { return true }
@@ -407,8 +420,11 @@ final class VideoEditorWindowController: NSWindowController, NSWindowDelegate {
     private func copy() {
         let request = model.currentRequest()
         let format = request.format
+        guard model.beginWork() else { return }
         Task { @MainActor [weak self] in
-            guard let self, let url = try? await self.model.export(request) else { return }
+            guard let self else { return }
+            defer { self.model.endWork() }
+            guard let url = try? await self.model.export(request) else { return }
             let item = NSPasteboardItem()
             item.setString(url.absoluteString, forType: .fileURL)
             // Apps that take pasted images, but not files, still get the animation.
@@ -432,16 +448,25 @@ final class VideoEditorWindowController: NSWindowController, NSWindowDelegate {
         let format = request.format
         let base = model.baseName
         if !askWhere, settings.saveFolderURL != nil {
+            guard model.beginWork() else { return }
             Task { @MainActor [weak self] in
-                guard let self, let exported = try? await self.model.export(request) else { return }
-                let saved = self.settings.withSaveFolder { folder -> URL? in
-                    let destination = AppSettings.uniqueFileURL(in: folder, base: base, fileExtension: format.fileExtension)
-                    return (try? FileManager.default.copyItem(at: exported, to: destination)) == nil ? nil : destination
+                guard let self else { return }
+                guard let exported = try? await self.model.export(request) else {
+                    self.model.endWork()
+                    return
                 }
+                self.model.statusMessage = "Saving…"
+                let saved = try? await self.settings.withSaveFolder { folder -> URL in
+                    let destination = AppSettings.uniqueFileURL(in: folder, base: base, fileExtension: format.fileExtension)
+                    try await Self.placeInBackground(exported, at: destination)
+                    return destination
+                }
+                self.model.statusMessage = nil
+                self.model.endWork()
                 if let destination = saved ?? nil {
                     self.finishSave(destination, message: "Saved to \(self.settings.saveFolderName ?? "folder")")
                 } else {
-                    // The folder has gone; ask instead.
+                    // The folder has gone or refused the file; ask instead.
                     self.save(askWhere: true)
                 }
             }
@@ -456,11 +481,15 @@ final class VideoEditorWindowController: NSWindowController, NSWindowDelegate {
             ?? FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask).first
         panel.nameFieldStringValue = "\(base).\(format.fileExtension)"
         panel.beginSheetModal(for: window) { [weak self] response in
-            guard response == .OK, let url = panel.url else { return }
+            guard response == .OK, let url = panel.url, let self, self.model.beginWork() else { return }
             Task { @MainActor [weak self] in
-                guard let self, let exported = try? await self.model.export(request) else { return }
+                guard let self else { return }
+                defer { self.model.endWork() }
+                guard let exported = try? await self.model.export(request) else { return }
+                self.model.statusMessage = "Saving…"
                 do {
-                    try Self.place(exported, at: url)
+                    try await Self.placeInBackground(exported, at: url)
+                    self.model.statusMessage = nil
                     self.finishSave(url, message: "Saved \(url.lastPathComponent)")
                 } catch {
                     self.model.statusMessage = "Could not save: \(error.localizedDescription)"
@@ -469,19 +498,31 @@ final class VideoEditorWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
+    /// Copies away from the main thread, so a large movie going to a slow disk does not
+    /// freeze the editor.
+    private static func placeInBackground(_ exported: URL, at destination: URL) async throws {
+        try await Task.detached(priority: .userInitiated) {
+            try place(exported, at: destination)
+        }.value
+    }
+
     /// Copies the export to `destination`. An existing file there (the save panel has
     /// already asked about replacing it) is swapped out only once the new copy is complete,
-    /// so a failed save leaves it untouched.
-    private static func place(_ exported: URL, at destination: URL) throws {
+    /// so a failed save leaves it untouched. The copy is staged in the system's replacement
+    /// folder for the destination's volume, which the sandbox allows and which lets the
+    /// swap happen within one volume.
+    nonisolated private static func place(_ exported: URL, at destination: URL) throws {
         let manager = FileManager.default
         guard manager.fileExists(atPath: destination.path) else {
             try manager.copyItem(at: exported, to: destination)
             return
         }
-        let staged = manager.temporaryDirectory.appendingPathComponent("QuickShot-save-\(UUID().uuidString)")
+        let replacementFolder = try manager.url(for: .itemReplacementDirectory, in: .userDomainMask,
+                                                appropriateFor: destination, create: true)
+        defer { try? manager.removeItem(at: replacementFolder) }
+        let staged = replacementFolder.appendingPathComponent("QuickShot-save-\(UUID().uuidString)")
             .appendingPathExtension(destination.pathExtension)
         try manager.copyItem(at: exported, to: staged)
-        defer { try? manager.removeItem(at: staged) }
         _ = try manager.replaceItemAt(destination, withItemAt: staged)
     }
 

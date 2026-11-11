@@ -43,23 +43,29 @@ nonisolated enum VideoExporter {
         guard let video = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else {
             throw VideoExportError.failed("QuickShot could not prepare the movie.")
         }
-        // ScreenCaptureKit adds a frame only when the picture changes, so after the last
-        // change the video track can end long before the sound does. That still stretch
-        // is filled by holding the last frame, so every part of the selection has a picture.
+        // ScreenCaptureKit adds a frame only when the picture changes, so the video track
+        // can end long before the sound does (and, in principle, start after it). Those
+        // still stretches hold the nearest frame, so every part of the selection has a picture.
         let trackRange = try await sourceVideo.load(.timeRange)
         guard !trackRange.isEmpty else { throw VideoExportError.noVideo }
-        let videoRange = trackRange.intersection(range)
-        var covered = CMTime.zero
-        if !videoRange.isEmpty {
-            try video.insertTimeRange(videoRange, of: sourceVideo, at: videoRange.start - range.start)
-            covered = videoRange.end - range.start
+        let frameLength = CMTimeMinimum(CMTime(value: 1, timescale: 60), trackRange.duration)
+        let firstFrame = CMTimeRange(start: trackRange.start, duration: frameLength)
+        let lastFrame = CMTimeRange(start: trackRange.end - frameLength, duration: frameLength)
+        func hold(_ frame: CMTimeRange, at start: CMTime, for length: CMTime) throws {
+            guard length > CMTime(value: 1, timescale: 1_000) else { return }
+            try video.insertTimeRange(frame, of: sourceVideo, at: start)
+            video.scaleTimeRange(CMTimeRange(start: start, duration: frame.duration), toDuration: length)
         }
-        let missing = range.duration - covered
-        if missing > CMTime(value: 1, timescale: 1_000) {
-            let lastFrame = CMTimeRange(start: CMTimeMaximum(trackRange.start, trackRange.end - CMTime(value: 1, timescale: 60)),
-                                        end: trackRange.end)
-            try video.insertTimeRange(lastFrame, of: sourceVideo, at: covered)
-            video.scaleTimeRange(CMTimeRange(start: covered, duration: lastFrame.duration), toDuration: missing)
+        let videoRange = trackRange.intersection(range)
+        if videoRange.isEmpty {
+            // The whole selection falls in a still stretch before the first frame or after the last.
+            try hold(range.end <= trackRange.start ? firstFrame : lastFrame, at: .zero, for: range.duration)
+        } else {
+            let lead = videoRange.start - range.start
+            try hold(firstFrame, at: .zero, for: lead)
+            try video.insertTimeRange(videoRange, of: sourceVideo, at: lead)
+            let covered = videoRange.end - range.start
+            try hold(lastFrame, at: covered, for: range.duration - covered)
         }
         video.preferredTransform = try await sourceVideo.load(.preferredTransform)
 

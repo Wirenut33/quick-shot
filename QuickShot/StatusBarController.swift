@@ -413,24 +413,34 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         }
     }
 
-    /// Quitting skips each window's own close check, so unsaved recordings are offered
-    /// here instead: discard them and quit, or keep working.
+    /// Quitting skips each window's own close check, so a recording in progress and
+    /// unsaved recordings are offered here instead: discard them and quit, or keep working.
     func shouldTerminate() -> NSApplication.TerminateReply {
+        let recording = !recordingController.isIdle
         let unsaved = videoEditors.filter(\.hasUnsavedRecording)
-        guard !unsaved.isEmpty else { return .terminateNow }
+        guard recording || !unsaved.isEmpty else { return .terminateNow }
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = unsaved.count == 1
-            ? "Quit and discard a recording?"
-            : "Quit and discard \(unsaved.count) recordings?"
-        alert.informativeText = unsaved.count == 1
-            ? "A recording has not been copied or saved."
-            : "These recordings have not been copied or saved."
+        switch (recording, unsaved.count) {
+        case (true, 0):
+            alert.messageText = "Quit and discard the recording in progress?"
+            alert.informativeText = "QuickShot is recording. Stop the recording first to keep it."
+        case (true, let count):
+            alert.messageText = "Quit and discard the recording in progress and \(count) unsaved recording\(count == 1 ? "" : "s")?"
+            alert.informativeText = "Stop the recording and copy or save the others first to keep them."
+        case (false, 1):
+            alert.messageText = "Quit and discard a recording?"
+            alert.informativeText = "A recording has not been copied or saved."
+        case (false, let count):
+            alert.messageText = "Quit and discard \(count) recordings?"
+            alert.informativeText = "These recordings have not been copied or saved."
+        }
         alert.addButton(withTitle: "Discard and Quit")
         alert.addButton(withTitle: "Cancel")
         alert.buttons.first?.hasDestructiveAction = true
         NSApp.activate(ignoringOtherApps: true)
         guard alert.runModal() == .alertFirstButtonReturn else { return .terminateCancel }
+        if recording { recordingController.abandon() }
         unsaved.forEach { $0.discardAndClose() }
         return .terminateNow
     }
