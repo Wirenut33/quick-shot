@@ -12,6 +12,7 @@ final class AnnotationWindowController: NSWindowController, NSWindowDelegate {
     private let settings: AppSettings
     private let collection: SnapshotCollection
     private var discardConfirmationExpires: Date?
+    private var discardConfirmed = false
     var onClose: (() -> Void)?
 
     init(image: NSImage, settings: AppSettings, collection: SnapshotCollection) {
@@ -73,6 +74,25 @@ final class AnnotationWindowController: NSWindowController, NSWindowDelegate {
         onClose = nil
     }
 
+    /// Every way of closing comes through here: the Close button, the title bar, ⌘W
+    /// and Escape. Unsaved markup is never dropped without the user saying so.
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard editorDocument.hasUnsavedChanges, !discardConfirmed else { return true }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Discard your markup?"
+        alert.informativeText = "This screenshot has changes that have not been copied or saved."
+        alert.addButton(withTitle: "Discard")
+        alert.addButton(withTitle: "Cancel")
+        alert.buttons.first?.hasDestructiveAction = true
+        alert.beginSheetModal(for: sender) { [weak self] response in
+            guard response == .alertFirstButtonReturn else { return }
+            self?.discardConfirmed = true
+            sender.close()
+        }
+        return false
+    }
+
     // MARK: Commands
 
     private func perform(_ command: EditorKeyCommand) {
@@ -90,6 +110,7 @@ final class AnnotationWindowController: NSWindowController, NSWindowDelegate {
         if !editorDocument.hasUnsavedChanges {
             window?.performClose(nil)
         } else if let expires = discardConfirmationExpires, expires > Date() {
+            discardConfirmed = true
             window?.performClose(nil)
         } else {
             discardConfirmationExpires = Date().addingTimeInterval(4)

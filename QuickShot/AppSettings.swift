@@ -16,6 +16,7 @@ final class AppSettings: ObservableObject {
         static let collect = "collectSnapshots"
         static let copyPath = "copyPathMode"
         static let welcome = "welcomeCompleted"
+        static let shortcutsConfirmed = "shortcutsConfirmed"
         static let shortcuts = "shortcuts"
         static let folderBookmark = "saveFolderBookmark"
         static let legacyFolderPath = "saveLocation"
@@ -32,6 +33,9 @@ final class AppSettings: ObservableObject {
     @Published var copyPathMode: Bool { didSet { defaults.set(copyPathMode, forKey: Key.copyPath) } }
     /// Set only when the user finishes the welcome window.
     @Published var welcomeCompleted: Bool { didSet { defaults.set(welcomeCompleted, forKey: Key.welcome) } }
+    /// True once the user has chosen shortcuts, in the welcome guide or in Settings.
+    /// Global shortcuts are registered only after that.
+    @Published private(set) var shortcutsConfirmed: Bool
     @Published private(set) var shortcuts: [CaptureAction: Shortcut]
     @Published private(set) var saveFolderURL: URL?
     /// Shortcuts the system refused to register this session. Not stored.
@@ -43,6 +47,7 @@ final class AppSettings: ObservableObject {
         collectMode = defaults.bool(forKey: Key.collect)
         copyPathMode = defaults.bool(forKey: Key.copyPath)
         welcomeCompleted = defaults.bool(forKey: Key.welcome)
+        shortcutsConfirmed = defaults.bool(forKey: Key.shortcutsConfirmed) || defaults.bool(forKey: Key.welcome)
         shortcuts = Self.decodeShortcuts(defaults.data(forKey: Key.shortcuts))
         saveFolderURL = nil
         migrateLegacySaveFolder()
@@ -55,8 +60,13 @@ final class AppSettings: ObservableObject {
         shortcuts[action]
     }
 
-    /// Assigns a shortcut, taking it away from any other action that had it.
+    /// Assigns a shortcut, taking it away from any other action that had it. Only the
+    /// user's own choices come through here, so the call also confirms shortcuts.
     func setShortcut(_ shortcut: Shortcut?, for action: CaptureAction) {
+        if !shortcutsConfirmed {
+            shortcutsConfirmed = true
+            defaults.set(true, forKey: Key.shortcutsConfirmed)
+        }
         var updated = shortcuts
         if let shortcut {
             for (other, existing) in updated where other != action && existing == shortcut {

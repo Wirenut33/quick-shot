@@ -55,7 +55,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.refreshMenuState() }
             .store(in: &observers)
-        settings.$shortcuts.combineLatest(settings.$welcomeCompleted)
+        settings.$shortcuts.combineLatest(settings.$shortcutsConfirmed)
             .dropFirst()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.applyShortcuts() }
@@ -137,7 +137,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         for (action, item) in captureItems {
             item.isEnabled = !isCapturing
             // Show the global shortcut once it is active; otherwise leave the item bare.
-            if settings.welcomeCompleted, let shortcut = settings.shortcut(for: action),
+            if settings.shortcutsConfirmed, let shortcut = settings.shortcut(for: action),
                !settings.unavailableShortcuts.contains(action), let key = shortcut.menuKeyEquivalent {
                 item.keyEquivalent = key
                 item.keyEquivalentModifierMask = shortcut.modifierFlags
@@ -156,12 +156,12 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     // MARK: Shortcuts
 
-    /// Global shortcuts become active only after the welcome window has shown them and
-    /// the user has continued, and they pause while a recorder is listening.
+    /// Global shortcuts become active only after the user has chosen them, in the welcome
+    /// guide or in Settings, and they pause while a recorder is listening.
     private func applyShortcuts() {
         HotKeyCenter.shared.unregisterAll()
         var unavailable: Set<CaptureAction> = []
-        if settings.welcomeCompleted, !isRecordingShortcut {
+        if settings.shortcutsConfirmed, !isRecordingShortcut {
             for (action, shortcut) in settings.shortcuts {
                 let registered = HotKeyCenter.shared.register(id: action.hotKeyID, shortcut: shortcut) { [weak self] in
                     self?.capture(action, afterMenu: false)

@@ -79,10 +79,13 @@ struct CaptureTests {
         defaults.set(folder.path, forKey: "saveLocation")
         let settings = AppSettings(defaults: defaults)
         precondition(settings.annotateMode && !settings.collectMode && !settings.welcomeCompleted, "Defaults must match a first launch")
-        precondition(settings.shortcuts.isEmpty, "No shortcut exists until the user accepts one")
+        precondition(settings.shortcuts.isEmpty && !settings.shortcutsConfirmed, "No shortcut exists until the user accepts one")
         precondition(settings.saveFolderURL?.standardizedFileURL.path == folder.standardizedFileURL.path && defaults.string(forKey: "saveLocation") == nil)
 
         settings.setShortcut(area, for: .selection)
+        precondition(settings.shortcutsConfirmed && !settings.welcomeCompleted,
+                     "Choosing a shortcut in Settings must enable it even if the welcome guide was closed unfinished")
+        precondition(AppSettings(defaults: defaults).shortcutsConfirmed)
         settings.setShortcut(area, for: .window)
         precondition(settings.shortcut(for: .window) == area && settings.shortcut(for: .selection) == nil, "One shortcut must not run two actions")
         settings.annotateMode = false

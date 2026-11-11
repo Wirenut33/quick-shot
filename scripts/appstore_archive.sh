@@ -20,4 +20,6 @@ python3 scripts/verify_appstore.py "$out/QuickShot.xcarchive/Products/Applicatio
 sed "s/__TEAM_ID__/$TEAM_ID/" AppStore/ExportOptions.plist > "$out/ExportOptions.plist"
 xcodebuild -exportArchive -archivePath "$out/QuickShot.xcarchive" -exportPath "$out/export" \
   -exportOptionsPlist "$out/ExportOptions.plist" -allowProvisioningUpdates
-echo "Exported $(ls "$out"/export/*.pkg). Upload it with the Transporter app, then finish in App Store Connect."
+package=$(find "$out/export" -maxdepth 1 -type f -name '*.pkg' -print -quit)
+if [[ -z "$package" ]]; then echo "Export finished without an installer package in $out/export" >&2; exit 1; fi
+echo "Exported $package. Upload it with the Transporter app, then finish in App Store Connect."
