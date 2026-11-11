@@ -12,6 +12,7 @@
 
 /* Begin PBXFileReference section */
 		C52D4C5E2EF836D800F06333 /* QuickShot.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = QuickShot.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		D10000000000000000000001 /* QuickShot.app (App Store) */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = "QuickShot.app (App Store)"; path = QuickShot.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -22,6 +23,14 @@
 			);
 			target = C52D4C5D2EF836D800F06333 /* QuickShot */;
 		};
+		D10000000000000000000002 /* Exceptions for "QuickShot" folder in "QuickShot-AppStore" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+				QuickShot.entitlements,
+			);
+			target = D10000000000000000000010 /* QuickShot-AppStore */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -29,6 +38,7 @@
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				C5A1E0012EF9000000F06333 /* Exceptions for "QuickShot" folder in "QuickShot" target */,
+				D10000000000000000000002 /* Exceptions for "QuickShot" folder in "QuickShot-AppStore" target */,
 			);
 			path = QuickShot;
 			sourceTree = "<group>";
@@ -41,6 +51,13 @@
 			buildActionMask = 2147483647;
 			files = (
                 A10000000000000000000001 /* Sparkle in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D10000000000000000000003 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -59,6 +76,7 @@
 			isa = PBXGroup;
 			children = (
 				C52D4C5E2EF836D800F06333 /* QuickShot.app */,
+				D10000000000000000000001 /* QuickShot.app (App Store) */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -89,6 +107,28 @@
 			productReference = C52D4C5E2EF836D800F06333 /* QuickShot.app */;
 			productType = "com.apple.product-type.application";
 		};
+		D10000000000000000000010 /* QuickShot-AppStore */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D10000000000000000000011 /* Build configuration list for PBXNativeTarget "QuickShot-AppStore" */;
+			buildPhases = (
+				D10000000000000000000004 /* Sources */,
+				D10000000000000000000003 /* Frameworks */,
+				D10000000000000000000005 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				C52D4C602EF836D800F06333 /* QuickShot */,
+			);
+			name = "QuickShot-AppStore";
+			packageProductDependencies = (
+			);
+			productName = QuickShot;
+			productReference = D10000000000000000000001 /* QuickShot.app (App Store) */;
+			productType = "com.apple.product-type.application";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -101,6 +141,9 @@
 				TargetAttributes = {
 					C52D4C5D2EF836D800F06333 = {
 						CreatedOnToolsVersion = 26.2;
+					};
+					D10000000000000000000010 = {
+						CreatedOnToolsVersion = 27.1;
 					};
 				};
 			};
@@ -120,6 +163,7 @@
 			projectRoot = "";
 			targets = (
 				C52D4C5D2EF836D800F06333 /* QuickShot */,
+				D10000000000000000000010 /* QuickShot-AppStore */,
 			);
 		};
 /* End PBXProject section */
@@ -132,10 +176,24 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D10000000000000000000005 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		C52D4C5A2EF836D800F06333 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D10000000000000000000004 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -296,7 +354,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 1.4;
+				MARKETING_VERSION = 1.5;
 				PRODUCT_BUNDLE_IDENTIFIER = com.quickshot.QuickShot.Debug;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -329,11 +387,84 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 1.4;
+				MARKETING_VERSION = 1.5;
 				PRODUCT_BUNDLE_IDENTIFIER = com.quickshot.QuickShot;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		D10000000000000000000012 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
+				CODE_SIGN_ENTITLEMENTS = AppStore/QuickShot.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CONFIGURATION_BUILD_DIR = "$(BUILD_DIR)/$(CONFIGURATION)-AppStore";
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SELECTED_FILES = readwrite;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = AppStore/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MARKETING_VERSION = 1.5;
+				PRODUCT_BUNDLE_IDENTIFIER = com.michaelmorale.QuickShot;
+				PRODUCT_NAME = QuickShot;
+				REGISTER_APP_GROUPS = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) APPSTORE";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		D10000000000000000000013 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
+				CODE_SIGN_ENTITLEMENTS = AppStore/QuickShot.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CONFIGURATION_BUILD_DIR = "$(BUILD_DIR)/$(CONFIGURATION)-AppStore";
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = Z99799S9D8;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SELECTED_FILES = readwrite;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = AppStore/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MARKETING_VERSION = 1.5;
+				PRODUCT_BUNDLE_IDENTIFIER = com.michaelmorale.QuickShot;
+				PRODUCT_NAME = QuickShot;
+				REGISTER_APP_GROUPS = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) APPSTORE";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -359,6 +490,15 @@
 			buildConfigurations = (
 				C52D4C6A2EF836D900F06333 /* Debug */,
 				C52D4C6B2EF836D900F06333 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		D10000000000000000000011 /* Build configuration list for PBXNativeTarget "QuickShot-AppStore" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D10000000000000000000012 /* Debug */,
+				D10000000000000000000013 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

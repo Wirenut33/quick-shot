@@ -3,7 +3,7 @@ import re
 import subprocess
 
 
-def versions(revision_count: int, major_minor: str = "1.4") -> tuple[str, str]:
+def versions(revision_count: int, major_minor: str = "1.5") -> tuple[str, str]:
     if revision_count < 1 or not re.fullmatch(r"\d+\.\d+", major_minor):
         raise ValueError("Expected a positive revision count and major.minor version")
     return f"{major_minor}.{revision_count}", str(1000 + revision_count)

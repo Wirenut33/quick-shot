@@ -14,11 +14,12 @@ def load(name):
 
 metadata = load("release_metadata")
 verify = load("verify_release")
+appstore = load("verify_appstore")
 
 
 class ReleaseTests(unittest.TestCase):
     def test_versions_increase_and_reruns_are_stable(self):
-        self.assertEqual(metadata.versions(10), ("1.4.10", "1010"))
+        self.assertEqual(metadata.versions(10), ("1.5.10", "1010"))
         self.assertEqual(metadata.versions(10), metadata.versions(10))
         self.assertGreater(int(metadata.versions(11)[1]), int(metadata.versions(10)[1]))
         with self.assertRaises(ValueError):
@@ -43,6 +44,28 @@ class ReleaseTests(unittest.TestCase):
                 feed.write_text(bad)
                 with self.assertRaises(ValueError):
                     verify.validate_feed(feed, archive, "1.4.10", "1010", "v1.4.10")
+
+    def test_app_store_build_rejects_updater_network_and_missing_sandbox(self):
+        sandboxed = {"com.apple.security.app-sandbox": True,
+                     "com.apple.security.files.user-selected.read-write": True,
+                     "com.apple.security.files.bookmarks.app-scope": True}
+        appstore.validate_entitlements(sandboxed)
+        for bad in [{}, {"com.apple.security.app-sandbox": False},
+                    {**sandboxed, "com.apple.security.network.client": True},
+                    {**sandboxed, "com.apple.security.get-task-allow": True}]:
+            with self.assertRaises(ValueError):
+                appstore.validate_entitlements(bad)
+        info = {"CFBundleIdentifier": "com.michaelmorale.QuickShot", "ITSAppUsesNonExemptEncryption": False,
+                "LSApplicationCategoryType": "public.app-category.utilities",
+                "NSHumanReadableCopyright": "Copyright", "LSMinimumSystemVersion": "15.0"}
+        appstore.validate_info(info)
+        for bad in [{**info, "SUFeedURL": "https://example.com/appcast.xml"},
+                    {**info, "CFBundleIdentifier": "com.quickshot.QuickShot"},
+                    {**info, "NSHumanReadableCopyright": ""},
+                    {key: value for key, value in info.items() if key != "ITSAppUsesNonExemptEncryption"}]:
+            with self.assertRaises(ValueError):
+                appstore.validate_info(bad)
+        appstore.validate_icon(Path(__file__).parents[1] / "QuickShot/Assets.xcassets/AppIcon.appiconset")
 
 
 if __name__ == "__main__":
