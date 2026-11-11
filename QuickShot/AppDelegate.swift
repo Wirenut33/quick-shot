@@ -11,33 +11,45 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
-        do {
-            try LoginItemManager.shared.ensureEnabled()
-        } catch {
-            NSLog("QuickShot could not register as a login item: \(error.localizedDescription)")
+        // Launching at login is the user's choice, made in the welcome window or Settings.
+        let controller = StatusBarController()
+        statusBarController = controller
+
+        let arguments = ProcessInfo.processInfo.arguments
+        var diagnosticLaunch = false
+
+        #if DEBUG
+        if arguments.contains("--capture-self-test") {
+            diagnosticLaunch = true
+            controller.runCaptureSelfTest()
+        } else if arguments.contains("--show-settings") {
+            diagnosticLaunch = true
+            controller.showSettingsForTesting()
         }
-        statusBarController = StatusBarController()
-        AppUpdater.shared.canInstall = { [weak self] in
-            self?.statusBarController?.canInstallUpdate == true
-        }
-        if !ProcessInfo.processInfo.arguments.contains(where: { $0.hasSuffix("-test") || $0 == "--capture-full" }) {
-            AppUpdater.shared.start()
+        #endif
+
+        #if !APPSTORE
+        // Smoke-test hooks used to validate an installed direct build's capture-to-editor
+        // flow without relying on menu bar coordinates. Not present in the App Store build.
+        if arguments.contains("--collection-capture-test") {
+            diagnosticLaunch = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { controller.testCollectionCapture() }
+        } else if arguments.contains("--editor-smoke-test") {
+            diagnosticLaunch = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { controller.openEditorForTesting() }
+        } else if arguments.contains("--capture-full") {
+            diagnosticLaunch = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { controller.captureForTesting(.fullScreen) }
         }
 
-        // Hidden smoke-test hook used to validate the installed app's complete
-        // capture-to-editor flow without relying on menu-bar coordinates.
-        if ProcessInfo.processInfo.arguments.contains("--collection-capture-test") {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
-                self?.statusBarController?.testCollectionCapture()
-            }
-        } else if ProcessInfo.processInfo.arguments.contains("--editor-smoke-test") {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
-                self?.statusBarController?.openEditorForTesting()
-            }
-        } else if ProcessInfo.processInfo.arguments.contains("--capture-full") {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
-                self?.statusBarController?.captureForTesting(.fullScreen)
-            }
+        AppUpdater.shared.canInstall = { [weak controller] in controller?.canInstallUpdate == true }
+        if !diagnosticLaunch {
+            AppUpdater.shared.start()
+        }
+        #endif
+
+        if !diagnosticLaunch {
+            controller.showWelcomeIfNeeded()
         }
     }
 

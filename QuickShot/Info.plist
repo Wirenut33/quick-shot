@@ -25,7 +25,7 @@
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSHumanReadableCopyright</key>
-	<string></string>
+	<string>Copyright © 2026 Michael Morale. All rights reserved.</string>
     <key>SUFeedURL</key>
     <string>https://github.com/Wirenut33/quick-shot/releases/latest/download/appcast.xml</string>
     <key>SUPublicEDKey</key>
@@ -40,7 +40,5 @@
     <true/>
     <key>SUScheduledCheckInterval</key>
     <integer>3600</integer>
-    <key>NSScreenCaptureUsageDescription</key>
-	<string>QuickShot captures screenshots that you choose so you can copy or annotate them.</string>
 </dict>
 </plist>

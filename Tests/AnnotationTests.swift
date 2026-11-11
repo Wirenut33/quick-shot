@@ -56,9 +56,26 @@ struct AnnotationTests {
         doc.applyStyle(style)
         precondition(doc.annotations.last!.style == style)
         doc.undo(); precondition(doc.annotations.last!.style != style)
-        doc.selectedTool = .text; doc.textDraft = "Before"
-        canvas.mouseDown(with: event(.leftMouseDown, CGPoint(x: 30,y: 100)))
-        doc.textDraft = "After"; doc.updateText()
+        // Text is typed in place: click with the Text tool, type, finish. Double-click edits.
+        doc.selectedTool = .text
+        click(CGPoint(x: 30,y: 100))
+        precondition(canvas.isEditingText && doc.annotations.count == 2, "The Text tool must open a field without placing anything yet")
+        canvas.setEditingText("   "); canvas.commitTextEdit()
+        precondition(doc.annotations.count == 2 && !canvas.isEditingText, "Blank text must place nothing")
+        click(CGPoint(x: 30,y: 100))
+        canvas.setEditingText("Before"); canvas.commitTextEdit()
+        precondition(doc.selectedMark!.kind == .text("Before") && doc.selectedTool == .select && !canvas.isEditingText)
+        let label = doc.selectedMark!
+        click(CGPoint(x: label.bounds.midX, y: label.bounds.midY), clicks: 2)
+        precondition(canvas.isEditingText && doc.hiddenMarkID == label.id, "Double-click must edit the label in place")
+        canvas.setEditingText("Discarded"); canvas.cancelTextEdit()
+        precondition(doc.selectedMark!.kind == .text("Before") && doc.hiddenMarkID == nil, "Escape must keep the old text")
+        click(CGPoint(x: label.bounds.midX, y: label.bounds.midY), clicks: 2)
+        canvas.setEditingText("After")
+        precondition(doc.pngData() != nil && !canvas.isEditingText, "Export must first finish a label being typed")
+        precondition(doc.annotations.first { $0.id == label.id }!.kind == .text("After"))
+        doc.undo(); precondition(doc.annotations.first { $0.id == label.id }!.kind == .text("Before"), "A text edit must undo in one step")
+        doc.redo(); doc.select(label.id)
         style = doc.style; style.fontSize = 48; style.bold = false; doc.applyStyle(style)
         precondition(doc.selectedMark!.kind == .text("After") && doc.selectedMark!.style.fontSize == 48 && !doc.selectedMark!.style.bold)
         doc.clear(); precondition(doc.annotations.isEmpty)
@@ -172,6 +189,74 @@ struct AnnotationTests {
         let peak = curvedPNG.colorAt(x: 36 + 120, y: curvedPNG.pixelsHigh - (36 + 120))!.usingColorSpace(.deviceRGB)!
         let chord = curvedPNG.colorAt(x: 36 + 120, y: curvedPNG.pixelsHigh - (36 + 20))!.usingColorSpace(.deviceRGB)!
         precondition(peak.blueComponent > 0.8 && peak.redComponent < 0.3 && chord.redComponent > 0.9, "Curved line must export through its dot, not along the chord")
-        print("PASS: canvas draw/select/move/resize/bend, lines (slide/curve) and polylines, text styling, edit undo/redo, highlight export")
+        // Each tool keeps its own look, and only real changes are stored.
+        let styles = AnnotationDocument(image: image)
+        canvas.document = styles
+        var remembered: [AnnotationTool: AnnotationStyle] = [:]
+        styles.onToolStyleChange = { remembered[$0] = $1 }
+        styles.selectedTool = .highlight
+        precondition(styles.style.color == .yellow)
+        styles.selectedTool = .arrow
+        precondition(styles.style.color == .red, "Highlight's yellow must not become the arrow colour")
+        var green = styles.style; green.color = .green; styles.applyStyle(green)
+        styles.selectedTool = .highlight; styles.selectedTool = .arrow
+        precondition(styles.style.color == .green && remembered[.arrow]?.color == .green && remembered[.highlight] == nil)
+        drag(CGPoint(x: 40, y: 40), CGPoint(x: 200, y: 40))
+        precondition(styles.annotations[0].style.color == .green)
+        // Single keys pick tools; keys with Command do not.
+        func type(_ character: String, flags: NSEvent.ModifierFlags = []) {
+            canvas.keyDown(with: NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: flags, timestamp: 0, windowNumber: window.windowNumber, context: nil, characters: character, charactersIgnoringModifiers: character, isARepeat: false, keyCode: 0)!)
+        }
+        type("b"); precondition(styles.selectedTool == .redact && styles.style.color == .black && !styles.style.pixelate, "Redact must default to an opaque fill")
+        type("t", flags: .command); precondition(styles.selectedTool == .redact)
+        type("V"); precondition(styles.selectedTool == .select)
+        precondition(Set(AnnotationTool.allCases.map(\.shortcutKey)).count == AnnotationTool.allCases.count, "Tool keys must be unique")
+        // Redaction: a solid mark hides everything; a pixelated one leaves only coarse blocks.
+        let striped = NSImage(size: NSSize(width: 400, height: 300))
+        striped.lockFocus()
+        for x in stride(from: 0, to: 400, by: 2) {
+            (x % 4 == 0 ? NSColor.black : NSColor.white).setFill()
+            NSRect(x: x, y: 0, width: 2, height: 300).fill()
+        }
+        striped.unlockFocus()
+        let secret = AnnotationDocument(image: striped)
+        secret.add(AnnotationMark(kind: .redact, start: CGPoint(x: 40, y: 40), end: CGPoint(x: 200, y: 120), style: AnnotationStyle(color: .black)))
+        func pixel(_ document: AnnotationDocument, _ x: Int, _ y: Int) -> NSColor {
+            let rep = NSBitmapImageRep(data: document.pngData()!)!
+            return rep.colorAt(x: 36 + x, y: rep.pixelsHigh - 36 - y)!.usingColorSpace(.deviceRGB)!
+        }
+        precondition(pixel(secret, 101, 80).brightnessComponent < 0.05 && pixel(secret, 102, 80).brightnessComponent < 0.05 && pixel(secret, 103, 80).brightnessComponent < 0.05, "Solid redaction must cover every pixel")
+        var mosaic = secret.annotations[0]; mosaic.style.pixelate = true; secret.replace(mosaic)
+        let inside = [pixel(secret, 101, 80), pixel(secret, 102, 80), pixel(secret, 103, 80), pixel(secret, 104, 80)].map(\.brightnessComponent)
+        precondition(inside.allSatisfy { $0 > 0.25 && $0 < 0.75 }, "Pixelation must average the stripes away: \(inside)")
+        let outside = [pixel(secret, 300, 200), pixel(secret, 302, 200)].map(\.brightnessComponent)
+        precondition(abs(outside[0] - outside[1]) > 0.8, "Pixels outside the mark must be untouched: \(outside)")
+        precondition(AnnotationDocument.pixelBlockSize(for: CGSize(width: 600, height: 20)) == 16 && AnnotationDocument.pixelBlockSize(for: CGSize(width: 600, height: 120)) == 40, "Mosaic blocks must never be fine enough to read")
+        precondition(secret.annotations[0].contains(CGPoint(x: 100, y: 80), tolerance: 2) && secret.annotations[0].tool == .redact)
+        // Escape steps back before it asks to close, and unsaved work is tracked.
+        let fresh = AnnotationDocument(image: image)
+        canvas.document = fresh
+        var commands: [EditorKeyCommand] = []
+        fresh.onKeyCommand = { commands.append($0) }
+        precondition(!fresh.hasUnsavedChanges)
+        fresh.selectedTool = .rectangle
+        drag(CGPoint(x: 20, y: 20), CGPoint(x: 120, y: 90))
+        precondition(fresh.hasUnsavedChanges && fresh.selectedID != nil)
+        key(53); precondition(commands.isEmpty && fresh.selectedID == nil, "The first Escape must only deselect")
+        key(53); precondition(commands == [.escape], "Escape with nothing selected must ask the window")
+        fresh.markClean(); precondition(!fresh.hasUnsavedChanges)
+        fresh.descriptionText = "Note"; precondition(fresh.hasUnsavedChanges)
+        fresh.undo(); fresh.descriptionText = ""; precondition(fresh.hasUnsavedChanges, "Undoing past the last copy is a change")
+        // Zoom: 100% is one image pixel per device pixel; Fit never enlarges past one point per pixel.
+        fresh.backingScale = 2
+        precondition(fresh.displayScale(fitting: CGSize(width: 236, height: 2_000)) == 0.5)
+        precondition(fresh.displayScale(fitting: CGSize(width: 5_000, height: 5_000)) == 1)
+        fresh.zoomToActualSize()
+        precondition(fresh.displayScale(fitting: .zero) == 0.5 && fresh.zoomPercent == 100)
+        fresh.zoomIn(); precondition(fresh.displayScale(fitting: .zero) == 0.625 && fresh.zoomPercent == 125)
+        fresh.zoomOut(); _ = fresh.displayScale(fitting: .zero); fresh.zoomOut()
+        precondition(fresh.displayScale(fitting: .zero) == 0.375 && fresh.zoomPercent == 75)
+        fresh.zoomToFit(); precondition(fresh.zoom == .fit)
+        print("PASS: canvas draw/select/move/resize/bend, lines and polylines, in-place text, per-tool styles, tool keys, redaction, escape and unsaved-work tracking, zoom, undo/redo, export")
     }
 }

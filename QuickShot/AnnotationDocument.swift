@@ -8,7 +8,7 @@ import Combine
 
 enum AnnotationTool: String, CaseIterable, Identifiable {
     case select = "Select", rectangle = "Rectangle", arrow = "Arrow", line = "Line", polyline = "Polyline"
-    case highlight = "Highlight", text = "Text"
+    case highlight = "Highlight", text = "Text", redact = "Redact"
     var id: String { rawValue }
     var symbolName: String {
         switch self {
@@ -19,11 +19,33 @@ enum AnnotationTool: String, CaseIterable, Identifiable {
         case .polyline: return "point.3.connected.trianglepath.dotted"
         case .highlight: return "highlighter"
         case .text: return "textformat"
+        case .redact: return "eye.slash"
+        }
+    }
+    /// Pressed on its own while the canvas has focus.
+    var shortcutKey: String {
+        switch self {
+        case .select: return "V"
+        case .rectangle: return "R"
+        case .arrow: return "A"
+        case .line: return "L"
+        case .polyline: return "P"
+        case .highlight: return "H"
+        case .text: return "T"
+        case .redact: return "B"
+        }
+    }
+    /// What a new mark looks like before the user has chosen otherwise.
+    var defaultStyle: AnnotationStyle {
+        switch self {
+        case .highlight: return AnnotationStyle(color: .yellow)
+        case .redact: return AnnotationStyle(color: .black)
+        default: return AnnotationStyle()
         }
     }
 }
 
-enum AnnotationColor: String, CaseIterable, Identifiable {
+enum AnnotationColor: String, CaseIterable, Identifiable, Codable {
     case red = "Red", orange = "Orange", yellow = "Yellow", green = "Green", blue = "Blue", black = "Black"
     var id: String { rawValue }
     var nsColor: NSColor {
@@ -38,16 +60,31 @@ enum AnnotationColor: String, CaseIterable, Identifiable {
     }
 }
 
-struct AnnotationStyle: Equatable {
+struct AnnotationStyle: Equatable, Codable {
     var color: AnnotationColor = .red
     var width: CGFloat = 6
     var fontSize: CGFloat = 32
     var bold = true
     var dashed = false
+    /// Redact only. Off covers the area with an opaque fill, which is the only style that
+    /// cannot be read back. On keeps a coarse mosaic of what was there.
+    var pixelate = false
 }
 
 struct AnnotationMark: Equatable, Identifiable {
-    enum Kind: Equatable { case rectangle, arrow, line, polyline, highlight, text(String) }
+    enum Kind: Equatable { case rectangle, arrow, line, polyline, highlight, redact, text(String) }
+    /// The tool that draws this kind of mark.
+    var tool: AnnotationTool {
+        switch kind {
+        case .rectangle: return .rectangle
+        case .arrow: return .arrow
+        case .line: return .line
+        case .polyline: return .polyline
+        case .highlight: return .highlight
+        case .redact: return .redact
+        case .text: return .text
+        }
+    }
     let id = UUID()
     var kind: Kind
     var start: CGPoint
@@ -161,23 +198,56 @@ struct AnnotationMark: Equatable, Identifiable {
         case .rectangle:
             return bounds.insetBy(dx: -tolerance, dy: -tolerance).contains(p)
                 && !bounds.insetBy(dx: tolerance + style.width/2, dy: tolerance + style.width/2).contains(p)
-        case .highlight, .text:
+        case .highlight, .redact, .text:
             return bounds.insetBy(dx: -tolerance, dy: -tolerance).contains(p)
         }
     }
 }
 
+enum EditorZoom: Equatable {
+    /// Shrink to fit the window, never enlarging beyond one point per pixel.
+    case fit
+    /// A fixed number of points per image pixel.
+    case scale(CGFloat)
+}
+
+/// Commands the canvas receives from the keyboard and hands to the window.
+enum EditorKeyCommand { case save, saveAs, copy, escape }
+
 final class AnnotationDocument: ObservableObject {
     let image: NSImage
 
     @Published var selectedTool: AnnotationTool = .rectangle {
-        // Leaving the polyline tool keeps whatever line was in progress.
-        didSet { if oldValue == .polyline, selectedTool != .polyline { commitPolyline(selecting: false) } }
+        didSet {
+            guard oldValue != selectedTool else { return }
+            // Leaving the polyline tool keeps whatever line was in progress.
+            if oldValue == .polyline { commitPolyline(selecting: false) }
+            // Each drawing tool remembers its own look, so Highlight's yellow never
+            // becomes the colour of the next arrow.
+            if selectedTool != .select {
+                selectedID = nil
+                style = style(for: selectedTool)
+                statusMessage = hint(for: selectedTool)
+            }
+        }
     }
     @Published private(set) var polylineDraft: [CGPoint] = []
     @Published var annotations: [AnnotationMark] = []
-    @Published var textDraft = ""
     @Published var descriptionText = ""
+    @Published var zoom: EditorZoom = .fit
+    /// A text label being edited in place is drawn by its text field instead.
+    @Published var hiddenMarkID: UUID?
+    /// Remembered look per tool. Set `onToolStyleChange` to store changes.
+    var toolStyles: [AnnotationTool: AnnotationStyle] = [:]
+    var onToolStyleChange: ((AnnotationTool, AnnotationStyle) -> Void)?
+    /// Finishes anything still being typed on the canvas before an export.
+    var commitPendingEdits: (() -> Void)?
+    var onKeyCommand: ((EditorKeyCommand) -> Void)?
+    /// Device pixels per point of the screen showing the editor; 100% zoom means one
+    /// image pixel per device pixel.
+    var backingScale: CGFloat = 2
+    private(set) var lastDisplayScale: CGFloat = 1
+    private var cleanState: SavedState?
     @Published var canvasPadding: CGFloat = 36
     @Published var statusMessage = "Draw a mark, then select it to move, resize, or style it."
     @Published var selectedID: UUID?
@@ -193,20 +263,36 @@ final class AnnotationDocument: ObservableObject {
         selectedID = id
         if let mark = selectedMark {
             style = mark.style
-            if case .text(let text) = mark.kind { textDraft = text }
             switch mark.kind {
             case .arrow: statusMessage = "Drag either end or the middle handle to bend the arrow."
             case .line: statusMessage = "Drag either end to adjust the line; slide or pull the middle dot to curve it."
             case .polyline: statusMessage = "Drag any point to reshape the line."
+            case .text: statusMessage = "Drag to move; drag a corner to resize; double-click to edit the text."
             default: statusMessage = "Drag the mark to move it; drag a corner to resize."
             }
-        } else if selectedTool == .text {
-            statusMessage = "Type a label, then click the canvas to place it."
-        } else if selectedTool == .polyline {
-            statusMessage = polylineHint
         } else {
-            statusMessage = "Draw a mark, then select it to move, resize, or style it."
+            statusMessage = hint(for: selectedTool)
         }
+    }
+
+    func hint(for tool: AnnotationTool) -> String {
+        switch tool {
+        case .text: return "Click where the label belongs, then type. Return finishes."
+        case .polyline: return polylineHint
+        case .redact: return "Drag over anything that must not be readable."
+        case .select: return "Click a mark to select it."
+        default: return "Draw a mark, then select it to move, resize, or style it."
+        }
+    }
+
+    func style(for tool: AnnotationTool) -> AnnotationStyle {
+        toolStyles[tool] ?? tool.defaultStyle
+    }
+
+    private func remember(_ value: AnnotationStyle, for tool: AnnotationTool) {
+        guard tool != .select, toolStyles[tool] != value else { return }
+        toolStyles[tool] = value
+        onToolStyleChange?(tool, value)
     }
     func checkpoint() {
         undoStack.append(annotations)
@@ -227,14 +313,33 @@ final class AnnotationDocument: ObservableObject {
     }
     func applyStyle(_ value: AnnotationStyle) {
         style = value
-        guard var mark = selectedMark, mark.style != value else { return }
+        guard var mark = selectedMark else {
+            remember(value, for: selectedTool)
+            return
+        }
+        remember(value, for: mark.tool)
+        guard mark.style != value else { return }
         checkpoint(); mark.style = value; replace(mark)
     }
-    func updateText() {
-        guard var mark = selectedMark, case .text = mark.kind,
-              !textDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              mark.kind != .text(textDraft) else { return }
-        checkpoint(); mark.kind = .text(textDraft); replace(mark)
+    /// Places a new label. Blank text places nothing.
+    @discardableResult
+    func addText(_ text: String, at point: CGPoint) -> Bool {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        add(AnnotationMark(kind: .text(text), start: point, end: point, style: style(for: .text)))
+        return true
+    }
+    /// Changes a label's text in one undo step. Blank text removes the label.
+    func setText(_ text: String, for id: UUID) {
+        guard var mark = annotations.first(where: { $0.id == id }), case .text = mark.kind,
+              mark.kind != .text(text) else { return }
+        checkpoint()
+        if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            annotations.removeAll { $0.id == id }
+            if selectedID == id { select(nil) }
+        } else {
+            mark.kind = .text(text)
+            replace(mark)
+        }
     }
     func deleteSelected() {
         guard selectedMark != nil else { return }
@@ -246,7 +351,7 @@ final class AnnotationDocument: ObservableObject {
         case .arrow: kind = .arrow
         case .line: kind = .line
         case .highlight: kind = .highlight
-        case .text: kind = .text(textDraft)
+        case .redact: kind = .redact
         default: kind = .rectangle
         }
         return AnnotationMark(kind: kind, start: start, end: end, style: style)
@@ -286,6 +391,60 @@ final class AnnotationDocument: ObservableObject {
 
     init(image: NSImage) {
         self.image = image
+        cleanState = currentState
+    }
+
+    // MARK: Unsaved work
+
+    private struct SavedState: Equatable {
+        var annotations: [AnnotationMark]
+        var descriptionText: String
+        var canvasPadding: CGFloat
+    }
+
+    private var currentState: SavedState {
+        SavedState(annotations: annotations, descriptionText: descriptionText, canvasPadding: canvasPadding)
+    }
+
+    /// True when something changed since the editor opened or the image was last
+    /// copied, saved or added to the collection.
+    var hasUnsavedChanges: Bool { cleanState != currentState || !polylineDraft.isEmpty }
+
+    func markClean() { cleanState = currentState }
+
+    // MARK: Zoom
+
+    static let zoomSteps: [CGFloat] = [0.1, 0.25, 0.33, 0.5, 0.67, 0.75, 1, 1.25, 1.5, 2, 3, 4]
+
+    /// Points per image pixel for the space the canvas has.
+    func displayScale(fitting available: CGSize) -> CGFloat {
+        let scale: CGFloat
+        switch zoom {
+        case .fit:
+            guard available.width > 0, available.height > 0 else { return displayScale }
+            scale = max(0.02, min(1, available.width / canvasSize.width, available.height / canvasSize.height))
+        case .scale(let value):
+            scale = value
+        }
+        lastDisplayScale = scale
+        return scale
+    }
+
+    /// Zoom as a share of true size, where 100 is one image pixel per device pixel.
+    var zoomPercent: Int { Int((lastDisplayScale * backingScale * 100).rounded()) }
+
+    func zoomIn() { step(by: 1) }
+    func zoomOut() { step(by: -1) }
+    func zoomToFit() { zoom = .fit }
+    func zoomToActualSize() { zoom = .scale(1 / max(backingScale, 1)) }
+
+    private func step(by direction: Int) {
+        let current = lastDisplayScale * backingScale
+        let next = direction > 0
+            ? Self.zoomSteps.first { $0 > current + 0.005 }
+            : Self.zoomSteps.last { $0 < current - 0.005 }
+        guard let next else { return }
+        zoom = .scale(next / max(backingScale, 1))
     }
 
     var descriptionHeight: CGFloat {
@@ -349,7 +508,7 @@ final class AnnotationDocument: ObservableObject {
             fraction: 1
         )
 
-        for annotation in annotations {
+        for annotation in annotations where annotation.id != hiddenMarkID {
             draw(annotation)
         }
         if let preview {
@@ -360,6 +519,7 @@ final class AnnotationDocument: ObservableObject {
     }
 
     func renderedImage() -> NSImage? {
+        commitPendingEdits?()
         commitPolyline(selecting: false)
         let size = canvasSize
         guard size.width > 0, size.height > 0,
@@ -412,18 +572,20 @@ final class AnnotationDocument: ObservableObject {
         let wroteImage = pasteboard.writeObjects([renderedImage])
         pasteboard.setData(pngData, forType: .png)
         statusMessage = wroteImage ? "Annotated screenshot copied. Paste it anywhere." : "Copy failed."
+        if wroteImage { markClean() }
         return wroteImage
     }
 
     @discardableResult
-    func save(to url: URL, copyPath: Bool) -> Bool {
+    func save(to url: URL, copyPath: Bool, overwrite: Bool = true) -> Bool {
         guard let data = pngData() else {
             statusMessage = "QuickShot could not render the annotated screenshot."
             return false
         }
 
         do {
-            try data.write(to: url, options: .atomic)
+            try data.write(to: url, options: overwrite ? .atomic : .withoutOverwriting)
+            markClean()
             if copyPath {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(url.path, forType: .string)
@@ -465,6 +627,9 @@ final class AnnotationDocument: ObservableObject {
                 if annotation.style.dashed { path.setLineDash([12, 8], count: 2, phase: 0) }
                 path.stroke()
             }
+
+        case .redact:
+            drawRedaction(annotation)
 
         case .arrow:
             drawArrow(annotation, from: start, to: end, color: color)
@@ -523,6 +688,53 @@ final class AnnotationDocument: ObservableObject {
         head.lineCapStyle = .round
         head.lineJoinStyle = .round
         head.stroke()
+    }
+
+    /// The side of one mosaic block, in image pixels. Fine blocks leave text readable,
+    /// so the block never drops below 16 and grows with the area covered.
+    static func pixelBlockSize(for area: CGSize) -> CGFloat {
+        max(16, (min(area.width, area.height) / 3).rounded(.up))
+    }
+
+    private func drawRedaction(_ mark: AnnotationMark) {
+        let target = mark.bounds
+        guard mark.style.pixelate, let mosaic = mosaic(for: target) else {
+            mark.style.color.nsColor.withAlphaComponent(1).setFill()
+            NSBezierPath(rect: target.offsetBy(dx: imageOrigin.x, dy: imageOrigin.y)).fill()
+            return
+        }
+        guard let context = NSGraphicsContext.current else { return }
+        context.saveGraphicsState()
+        context.imageInterpolation = .none
+        context.cgContext.interpolationQuality = .none
+        context.cgContext.draw(mosaic.image, in: mosaic.rect.offsetBy(dx: imageOrigin.x, dy: imageOrigin.y))
+        context.restoreGraphicsState()
+    }
+
+    /// Averages the covered part of the screenshot into coarse blocks. Returns nil when
+    /// the mark lies entirely outside the screenshot.
+    private func mosaic(for rect: CGRect) -> (image: CGImage, rect: CGRect)? {
+        let covered = rect.intersection(CGRect(origin: .zero, size: image.size))
+        guard !covered.isNull, covered.width >= 1, covered.height >= 1,
+              let source = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+        let scaleX = CGFloat(source.width) / image.size.width
+        let scaleY = CGFloat(source.height) / image.size.height
+        // Marks use a bottom-left origin; the bitmap's rows start at the top.
+        let crop = CGRect(x: covered.minX * scaleX, y: (image.size.height - covered.maxY) * scaleY,
+                          width: covered.width * scaleX, height: covered.height * scaleY).integral
+        guard let patch = source.cropping(to: crop) else { return nil }
+        let block = Self.pixelBlockSize(for: covered.size)
+        let columns = max(1, Int((covered.width / block).rounded(.up)))
+        let rows = max(1, Int((covered.height / block).rounded(.up)))
+        guard let context = CGContext(data: nil, width: columns, height: rows, bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        context.interpolationQuality = .medium
+        context.setFillColor(CGColor(gray: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: columns, height: rows))
+        context.draw(patch, in: CGRect(x: 0, y: 0, width: columns, height: rows))
+        guard let small = context.makeImage() else { return nil }
+        return (small, covered)
     }
 
     private func drawDescriptionIfNeeded() {

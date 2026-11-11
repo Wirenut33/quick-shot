@@ -1,3 +1,4 @@
+#if !APPSTORE
 import AppKit
 import Sparkle
 
@@ -49,3 +50,4 @@ final class AppUpdater: NSObject, SPUUpdaterDelegate {
         install()
     }
 }
+#endif
