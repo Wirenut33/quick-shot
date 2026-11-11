@@ -85,9 +85,8 @@ final class ScreenRecorder {
         recording.outputURL = outputURL
         recording.outputFileType = .mov
         recording.videoCodecType = .h264
-        if #available(macOS 27.0, *), request.systemAudio, request.microphone {
-            recording.mixesAudioWithMicrophone = true
-        }
+        // The microphone lands on its own audio track; VideoExporter mixes the tracks on
+        // export, so this works the same on every macOS version and with Xcode 26.
         let output = SCRecordingOutput(configuration: recording, delegate: events)
 
         let stream = SCStream(filter: filter, configuration: configuration, delegate: events)
