@@ -90,6 +90,17 @@ struct RecordingTests {
             preconditionFailure("An empty range must be refused")
         } catch VideoExportError.emptyRange {}
 
+        // Decoder noise is tolerated; a real change is not.
+        let still = Data(repeating: 120, count: 4_096)
+        var noisy = still
+        noisy[10] = 128
+        noisy[2_000] = 113
+        precondition(VideoExporter.looksIdentical(still, noisy), "Decoder noise must not count as a change")
+        var changed = still
+        changed[3_000] = 200
+        precondition(!VideoExporter.looksIdentical(still, changed), "A visible change must be kept")
+        precondition(!VideoExporter.looksIdentical(still, Data(repeating: 120, count: 4_000)))
+
         // GIF: 1 s at 10 fps from a clip whose colour changes every 0.5 s. Unchanged
         // frames merge, so two frames of 0.5 s each remain, scaled to the requested width.
         let gif = folder.appendingPathComponent("clip.gif")

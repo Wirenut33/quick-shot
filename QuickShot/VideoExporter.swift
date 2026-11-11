@@ -194,7 +194,7 @@ nonisolated enum VideoExporter {
                 throw VideoExportError.failed(error.localizedDescription)
             }
             let pixels = image.dataProvider?.data as Data?
-            if var current = pending, let pixels, current.pixels == pixels {
+            if var current = pending, let pixels, let previous = current.pixels, looksIdentical(previous, pixels) {
                 current.delay += frameDelay
                 pending = current
             } else {
@@ -207,6 +207,26 @@ nonisolated enum VideoExporter {
 
         guard CGImageDestinationFinalize(output) else {
             throw VideoExportError.failed("QuickShot could not finish the GIF file.")
+        }
+    }
+
+    /// Decoding the same picture twice can differ by a few levels per channel, depending
+    /// on the decoder and the frame type, so frames count as unchanged when no byte moves
+    /// further than `tolerance`. A real change, such as a moving pointer or a typed
+    /// character, moves far more. Each frame is compared with the first of its run, so
+    /// small drifts cannot add up.
+    static func looksIdentical(_ first: Data, _ second: Data, tolerance: UInt8 = 12) -> Bool {
+        guard first.count == second.count else { return false }
+        return first.withUnsafeBytes { left in
+            second.withUnsafeBytes { right in
+                let a = left.bindMemory(to: UInt8.self)
+                let b = right.bindMemory(to: UInt8.self)
+                for index in 0..<a.count {
+                    let difference = a[index] > b[index] ? a[index] - b[index] : b[index] - a[index]
+                    if difference > tolerance { return false }
+                }
+                return true
+            }
         }
     }
 
