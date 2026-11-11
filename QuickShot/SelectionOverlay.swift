@@ -16,6 +16,9 @@ final class SelectionOverlayController {
         /// The picked window, plus the same region cut from the frozen frame in case a
         /// live capture of the window fails.
         case window(WindowCandidate, fallback: CGImage?)
+        /// For recording: the chosen area in display points from the display's top-left
+        /// corner. A picked window gives its visible frame on that display.
+        case region(CGRect, displayID: CGDirectDisplayID)
         case cancelled
     }
 
@@ -23,6 +26,8 @@ final class SelectionOverlayController {
     private let windows: [WindowCandidate]
     private(set) var mode: Mode
     let areaHint: String
+    /// Return the selected rectangle instead of cutting it from the frozen frame.
+    let returnsRegion: Bool
     private var panels: [OverlayPanel] = []
     private var continuation: CheckedContinuation<Outcome, Never>?
 
@@ -30,11 +35,12 @@ final class SelectionOverlayController {
     /// One per display while the overlay is up.
     var overlayViews: [OverlayView] { panels.map(\.overlayView) }
 
-    init(displays: [DisplayCapture], windows: [WindowCandidate], mode: Mode, areaHint: String) {
+    init(displays: [DisplayCapture], windows: [WindowCandidate], mode: Mode, areaHint: String, returnsRegion: Bool = false) {
         self.displays = displays
         self.windows = windows
         self.mode = windows.isEmpty ? .area : mode
         self.areaHint = areaHint
+        self.returnsRegion = returnsRegion
     }
 
     func run() async -> Outcome {
@@ -75,6 +81,10 @@ final class SelectionOverlayController {
     }
 
     func finishArea(_ rect: CGRect, in view: OverlayView) {
+        if returnsRegion {
+            finish(.region(rect, displayID: view.capture.displayID))
+            return
+        }
         let pixels = CaptureGeometry.pixelRect(
             for: rect,
             overlaySize: view.bounds.size,
@@ -90,6 +100,11 @@ final class SelectionOverlayController {
     func finishWindow(at index: Int, in view: OverlayView) {
         guard windows.indices.contains(index) else { return }
         let visible = view.windowFrames[index].intersection(view.bounds)
+        if returnsRegion {
+            guard !visible.isEmpty else { return }
+            finish(.region(visible, displayID: view.capture.displayID))
+            return
+        }
         let pixels = CaptureGeometry.pixelRect(
             for: visible,
             overlaySize: view.bounds.size,

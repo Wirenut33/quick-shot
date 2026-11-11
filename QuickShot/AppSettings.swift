@@ -21,6 +21,16 @@ final class AppSettings: ObservableObject {
         static let folderBookmark = "saveFolderBookmark"
         static let legacyFolderPath = "saveLocation"
         static let toolStyles = "toolStyles"
+        static let recordMicrophone = "recordMicrophone"
+        static let recordSystemAudio = "recordSystemAudio"
+        static let recordCamera = "recordCamera"
+        static let recordShowsClicks = "recordShowsClicks"
+        static let recordCountdown = "recordCountdown"
+        static let microphoneID = "microphoneDeviceID"
+        static let cameraID = "cameraDeviceID"
+        static let videoFormat = "videoExportFormat"
+        static let gifFrameRate = "gifFrameRate"
+        static let gifMaxWidth = "gifMaxWidth"
     }
 
     private let defaults: UserDefaults
@@ -41,6 +51,23 @@ final class AppSettings: ObservableObject {
     /// Shortcuts the system refused to register this session. Not stored.
     @Published var unavailableShortcuts: Set<CaptureAction> = []
 
+    // Recording. Microphone and camera are off until the user turns them on, so a first
+    // recording never raises a permission prompt the user did not ask for.
+    @Published var recordMicrophone: Bool { didSet { defaults.set(recordMicrophone, forKey: Key.recordMicrophone) } }
+    @Published var recordSystemAudio: Bool { didSet { defaults.set(recordSystemAudio, forKey: Key.recordSystemAudio) } }
+    @Published var recordCamera: Bool { didSet { defaults.set(recordCamera, forKey: Key.recordCamera) } }
+    /// Draws a ring where the user clicks, which helps viewers follow a tutorial.
+    @Published var recordShowsClicks: Bool { didSet { defaults.set(recordShowsClicks, forKey: Key.recordShowsClicks) } }
+    @Published var recordCountdown: Bool { didSet { defaults.set(recordCountdown, forKey: Key.recordCountdown) } }
+    /// Capture device unique IDs. Nil means the system default.
+    @Published var microphoneID: String? { didSet { defaults.set(microphoneID, forKey: Key.microphoneID) } }
+    @Published var cameraID: String? { didSet { defaults.set(cameraID, forKey: Key.cameraID) } }
+    /// The video editor's last export choices.
+    @Published var videoFormat: VideoFormat { didSet { defaults.set(videoFormat.rawValue, forKey: Key.videoFormat) } }
+    @Published var gifFrameRate: Int { didSet { defaults.set(gifFrameRate, forKey: Key.gifFrameRate) } }
+    /// Zero keeps the recording's own width.
+    @Published var gifMaxWidth: Int { didSet { defaults.set(gifMaxWidth, forKey: Key.gifMaxWidth) } }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         annotateMode = defaults.object(forKey: Key.annotate) == nil ? true : defaults.bool(forKey: Key.annotate)
@@ -49,6 +76,18 @@ final class AppSettings: ObservableObject {
         welcomeCompleted = defaults.bool(forKey: Key.welcome)
         shortcutsConfirmed = defaults.bool(forKey: Key.shortcutsConfirmed) || defaults.bool(forKey: Key.welcome)
         shortcuts = Self.decodeShortcuts(defaults.data(forKey: Key.shortcuts))
+        recordMicrophone = defaults.bool(forKey: Key.recordMicrophone)
+        recordSystemAudio = defaults.bool(forKey: Key.recordSystemAudio)
+        recordCamera = defaults.bool(forKey: Key.recordCamera)
+        recordShowsClicks = defaults.object(forKey: Key.recordShowsClicks) == nil ? true : defaults.bool(forKey: Key.recordShowsClicks)
+        recordCountdown = defaults.object(forKey: Key.recordCountdown) == nil ? true : defaults.bool(forKey: Key.recordCountdown)
+        microphoneID = defaults.string(forKey: Key.microphoneID)
+        cameraID = defaults.string(forKey: Key.cameraID)
+        videoFormat = VideoFormat(rawValue: defaults.string(forKey: Key.videoFormat) ?? "") ?? .mov
+        gifFrameRate = GIFOptions.frameRates.contains(defaults.integer(forKey: Key.gifFrameRate))
+            ? defaults.integer(forKey: Key.gifFrameRate) : GIFOptions.defaultFrameRate
+        gifMaxWidth = defaults.object(forKey: Key.gifMaxWidth) == nil || !GIFOptions.widths.contains(defaults.integer(forKey: Key.gifMaxWidth))
+            ? GIFOptions.defaultWidth : defaults.integer(forKey: Key.gifMaxWidth)
         saveFolderURL = nil
         migrateLegacySaveFolder()
         saveFolderURL = resolveSaveFolder()?.url
@@ -175,10 +214,18 @@ final class AppSettings: ObservableObject {
     // MARK: File names
 
     static func screenshotBaseName(at date: Date = Date()) -> String {
+        "Screenshot_\(timestamp(date))"
+    }
+
+    static func recordingBaseName(at date: Date = Date()) -> String {
+        "Recording_\(timestamp(date))"
+    }
+
+    private static func timestamp(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
-        return "Screenshot_\(formatter.string(from: date))"
+        return formatter.string(from: date)
     }
 
     /// A name in `folder` that nothing occupies yet: `base.png`, then `base_2.png`, and so on.

@@ -1,0 +1,430 @@
+//
+//  VideoEditor.swift
+//  QuickShot
+//
+
+import AVKit
+import AppKit
+import Combine
+import SwiftUI
+import UniformTypeIdentifiers
+
+/// One recording open for trimming and export.
+@MainActor
+final class VideoEditorModel: ObservableObject {
+    let sourceURL: URL
+    let player: AVPlayer
+    let baseName: String
+    @Published private(set) var duration: Double = 0
+    @Published private(set) var trimStart: Double = 0
+    @Published private(set) var trimEnd: Double = 0
+    @Published private(set) var hasAudio = false
+    @Published var includesAudio = true
+    @Published private(set) var isExporting = false
+    /// The player view's trim handles are showing; its own Trim and Cancel buttons apply.
+    @Published private(set) var isTrimming = false
+    /// Nil while exporting means the progress is unknown.
+    @Published private(set) var progress: Double?
+    @Published var statusMessage: String?
+    /// True until the recording has been copied or saved once.
+    @Published private(set) var hasUnsavedChanges = true
+
+    weak var playerView: AVPlayerView?
+    private let settings: AppSettings
+    private var lastExport: (key: ExportKey, url: URL)?
+
+    private struct ExportKey: Hashable {
+        let edit: VideoEdit
+        let format: VideoFormat
+        let frameRate: Int
+        let width: Int
+    }
+
+    init(url: URL, settings: AppSettings) {
+        sourceURL = url
+        baseName = url.deletingPathExtension().lastPathComponent
+        player = AVPlayer(url: url)
+        self.settings = settings
+        Task { await load() }
+    }
+
+    var isTrimmed: Bool { trimStart > 0.01 || (duration > 0 && trimEnd < duration - 0.01) }
+    var selectedDuration: Double { max(0, trimEnd - trimStart) }
+
+    private func load() async {
+        let asset = AVURLAsset(url: sourceURL)
+        duration = (try? await asset.load(.duration).seconds) ?? 0
+        trimEnd = duration
+        hasAudio = !((try? await asset.loadTracks(withMediaType: .audio)) ?? []).isEmpty
+    }
+
+    // MARK: Trimming
+
+    func beginTrim() {
+        guard let playerView, playerView.canBeginTrimming else { return }
+        isTrimming = true
+        playerView.beginTrimming { [weak self] result in
+            MainActor.assumeIsolated {
+                self?.isTrimming = false
+                guard result == .okButton else { return }
+                self?.readTrim()
+            }
+        }
+    }
+
+    func resetTrim() {
+        player.currentItem?.reversePlaybackEndTime = .invalid
+        player.currentItem?.forwardPlaybackEndTime = .invalid
+        readTrim()
+    }
+
+    /// The player view stores the trim on the item as its playback end times.
+    private func readTrim() {
+        guard let item = player.currentItem else { return }
+        let start = item.reversePlaybackEndTime
+        let end = item.forwardPlaybackEndTime
+        trimStart = start.isValid && start.isNumeric ? max(0, start.seconds) : 0
+        trimEnd = end.isValid && end.isNumeric ? min(duration, end.seconds) : duration
+        statusMessage = nil
+    }
+
+    // MARK: Export
+
+    var summary: String {
+        var parts = [RecordingGeometry.timecode(selectedDuration) + (isTrimmed ? " of " + RecordingGeometry.timecode(duration) : "")]
+        switch settings.videoFormat {
+        case .mov:
+            parts.append(hasAudio ? (includesAudio ? "with sound" : "no sound") : "no sound recorded")
+        case .gif:
+            parts.append("\(settings.gifFrameRate) fps, \(GIFOptions.widthTitle(settings.gifMaxWidth).lowercased())")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    /// Exports with the current choices, reusing the last file when nothing has changed.
+    func export() async throws -> URL {
+        let format = settings.videoFormat
+        let edit = VideoEdit(start: trimStart, end: trimEnd, includesAudio: includesAudio && hasAudio && format == .mov)
+        let key = ExportKey(edit: edit, format: format, frameRate: settings.gifFrameRate, width: settings.gifMaxWidth)
+        if let lastExport, lastExport.key == key, FileManager.default.fileExists(atPath: lastExport.url.path) {
+            return lastExport.url
+        }
+
+        let folder = RecordingController.recordingsFolder.appendingPathComponent("Exports/\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let destination = folder.appendingPathComponent(baseName).appendingPathExtension(format.fileExtension)
+
+        isExporting = true
+        progress = format == .gif ? 0 : nil
+        statusMessage = format == .gif ? "Making GIF…" : "Exporting movie…"
+        defer { isExporting = false; progress = nil }
+        do {
+            switch format {
+            case .mov:
+                try await VideoExporter.exportMovie(from: sourceURL, edit: edit, to: destination)
+            case .gif:
+                let relay = ProgressRelay { [weak self] fraction in self?.progress = fraction }
+                try await VideoExporter.exportGIF(
+                    from: sourceURL, start: edit.start, end: edit.end,
+                    frameRate: key.frameRate, maxWidth: key.width, to: destination
+                ) { fraction in
+                    relay.send(fraction)
+                }
+            }
+        } catch {
+            try? FileManager.default.removeItem(at: folder)
+            statusMessage = error.localizedDescription
+            throw error
+        }
+        statusMessage = nil
+        lastExport = (key, destination)
+        return destination
+    }
+
+    func markSaved() { hasUnsavedChanges = false }
+
+    func fileSizeDescription(of url: URL) -> String {
+        let bytes = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+        return ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
+    }
+}
+
+/// Carries export progress from a background task to the editor.
+private final class ProgressRelay: @unchecked Sendable {
+    private let apply: @MainActor (Double) -> Void
+
+    init(_ apply: @escaping @MainActor (Double) -> Void) {
+        self.apply = apply
+    }
+
+    nonisolated func send(_ value: Double) {
+        Task { @MainActor in self.apply(value) }
+    }
+}
+
+struct VideoEditorCommands {
+    var copy: () -> Void
+    var save: (_ askWhere: Bool) -> Void
+    var close: () -> Void
+}
+
+struct VideoEditorView: View {
+    @ObservedObject var model: VideoEditorModel
+    @ObservedObject var settings: AppSettings
+    let commands: VideoEditorCommands
+
+    var body: some View {
+        VStack(spacing: 0) {
+            PlayerView(model: model)
+                .frame(minWidth: 560, minHeight: 300)
+            Divider()
+            VStack(spacing: 10) {
+                editRow
+                actionRow
+            }
+            .padding(12)
+            // While trimming, Return and Esc belong to the player's Trim and Cancel buttons.
+            .disabled(model.isExporting || model.isTrimming)
+        }
+    }
+
+    private var editRow: some View {
+        HStack(spacing: 14) {
+            Button(action: model.beginTrim) {
+                Label("Trim", systemImage: "timeline.selection")
+            }
+            .keyboardShortcut("t", modifiers: .command)
+            .help("Drag the yellow handles to keep only part of the recording (⌘T)")
+            if model.isTrimmed {
+                Button("Reset Trim", action: model.resetTrim)
+            }
+
+            Toggle("Sound", isOn: $model.includesAudio)
+                .toggleStyle(.checkbox)
+                .disabled(!model.hasAudio || settings.videoFormat == .gif)
+                .help(model.hasAudio ? "Keep or remove the recorded sound" : "This recording has no sound")
+
+            Spacer(minLength: 8)
+
+            Picker("Format", selection: $settings.videoFormat) {
+                Text("MOV").tag(VideoFormat.mov)
+                Text("GIF").tag(VideoFormat.gif)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+            .help("Export as a movie or an animated GIF")
+
+            if settings.videoFormat == .gif {
+                Picker("Frame rate", selection: $settings.gifFrameRate) {
+                    ForEach(GIFOptions.frameRates, id: \.self) { Text("\($0) fps").tag($0) }
+                }
+                .labelsHidden()
+                .fixedSize()
+                Picker("Size", selection: $settings.gifMaxWidth) {
+                    ForEach(GIFOptions.widths, id: \.self) { Text(GIFOptions.widthTitle($0)).tag($0) }
+                }
+                .labelsHidden()
+                .fixedSize()
+            }
+        }
+    }
+
+    private var actionRow: some View {
+        HStack(spacing: 10) {
+            Button("Close", action: commands.close)
+                .keyboardShortcut(.cancelAction)
+            if model.isExporting {
+                if let progress = model.progress {
+                    ProgressView(value: progress).frame(width: 90)
+                } else {
+                    ProgressView().controlSize(.small)
+                }
+            }
+            Text(model.statusMessage ?? model.summary)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: 8)
+            Button("Copy") { commands.copy() }
+                .keyboardShortcut("c", modifiers: .command)
+                .help("Copy the \(settings.videoFormat == .gif ? "GIF" : "movie") to paste into another app (⌘C)")
+            Button("Save As…") { commands.save(true) }
+                .keyboardShortcut("s", modifiers: [.command, .shift])
+            Button("Save") { commands.save(false) }
+                .keyboardShortcut("s", modifiers: .command)
+                .buttonStyle(.borderedProminent)
+                .help(settings.saveFolderURL == nil ? "Choose where to save (⌘S)" : "Save to \(settings.saveFolderName ?? "the save folder") (⌘S)")
+        }
+    }
+}
+
+private struct PlayerView: NSViewRepresentable {
+    let model: VideoEditorModel
+
+    func makeNSView(context: Context) -> AVPlayerView {
+        let view = AVPlayerView()
+        view.player = model.player
+        view.controlsStyle = .inline
+        view.showsFrameSteppingButtons = true
+        view.showsFullScreenToggleButton = false
+        view.videoGravity = .resizeAspect
+        model.playerView = view
+        return view
+    }
+
+    func updateNSView(_ view: AVPlayerView, context: Context) {}
+}
+
+final class VideoEditorWindowController: NSWindowController, NSWindowDelegate {
+    private let model: VideoEditorModel
+    private let settings: AppSettings
+    private var discardConfirmed = false
+    var onClose: (() -> Void)?
+
+    init(recording url: URL, settings: AppSettings) {
+        model = VideoEditorModel(url: url, settings: settings)
+        self.settings = settings
+
+        let visible = NSScreen.main?.visibleFrame.size ?? NSSize(width: 1280, height: 800)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: min(1_040, visible.width - 40), height: min(720, visible.height - 60)),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "QuickShot — Recording"
+        window.minSize = NSSize(width: 680, height: 440)
+        window.isReleasedWhenClosed = false
+        window.center()
+        super.init(window: window)
+        window.delegate = self
+        window.contentView = NSHostingView(rootView: VideoEditorView(
+            model: model,
+            settings: settings,
+            commands: VideoEditorCommands(
+                copy: { [weak self] in self?.copy() },
+                save: { [weak self] askWhere in self?.save(askWhere: askWhere) },
+                close: { [weak self] in self?.window?.performClose(nil) }
+            )
+        ))
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func present() {
+        NSApp.activate(ignoringOtherApps: true)
+        showWindow(nil)
+        window?.makeKeyAndOrderFront(nil)
+        model.player.play()
+    }
+
+    /// A recording that was never copied or saved is not thrown away without asking.
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard model.hasUnsavedChanges, !discardConfirmed else { return true }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Discard this recording?"
+        alert.informativeText = "It has not been copied or saved."
+        alert.addButton(withTitle: "Discard")
+        alert.addButton(withTitle: "Cancel")
+        alert.buttons.first?.hasDestructiveAction = true
+        alert.beginSheetModal(for: sender) { [weak self] response in
+            guard response == .alertFirstButtonReturn else { return }
+            self?.discardConfirmed = true
+            sender.close()
+        }
+        return false
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        model.player.pause()
+        model.player.replaceCurrentItem(with: nil)
+        try? FileManager.default.removeItem(at: model.sourceURL)
+        onClose?()
+        onClose = nil
+    }
+
+    // MARK: Commands
+
+    private func copy() {
+        let format = settings.videoFormat
+        Task { @MainActor [weak self] in
+            guard let self, let url = try? await self.model.export() else { return }
+            let item = NSPasteboardItem()
+            item.setString(url.absoluteString, forType: .fileURL)
+            // Apps that take pasted images, but not files, still get the animation.
+            if format == .gif, let data = try? Data(contentsOf: url) {
+                item.setData(data, forType: NSPasteboard.PasteboardType(UTType.gif.identifier))
+            }
+            NSPasteboard.general.clearContents()
+            if NSPasteboard.general.writeObjects([item]) {
+                self.model.markSaved()
+                HUD.show(format == .gif ? "Copied GIF (\(self.model.fileSizeDescription(of: url)))" : "Copied movie",
+                         symbol: "doc.on.clipboard.fill")
+            } else {
+                self.model.statusMessage = "QuickShot could not copy the file."
+            }
+        }
+    }
+
+    /// Saves to the chosen folder in one step, or asks where with a save panel.
+    private func save(askWhere: Bool) {
+        let format = settings.videoFormat
+        let base = model.baseName
+        if !askWhere, settings.saveFolderURL != nil {
+            Task { @MainActor [weak self] in
+                guard let self, let exported = try? await self.model.export() else { return }
+                let saved = self.settings.withSaveFolder { folder -> URL? in
+                    let destination = AppSettings.uniqueFileURL(in: folder, base: base, fileExtension: format.fileExtension)
+                    return (try? FileManager.default.copyItem(at: exported, to: destination)) == nil ? nil : destination
+                }
+                if let destination = saved ?? nil {
+                    self.finishSave(destination, message: "Saved to \(self.settings.saveFolderName ?? "folder")")
+                } else {
+                    // The folder has gone; ask instead.
+                    self.save(askWhere: true)
+                }
+            }
+            return
+        }
+
+        guard let window else { return }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [format.contentType]
+        panel.canCreateDirectories = true
+        panel.directoryURL = settings.saveFolderURL
+            ?? FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask).first
+        panel.nameFieldStringValue = "\(base).\(format.fileExtension)"
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard response == .OK, let url = panel.url else { return }
+            Task { @MainActor [weak self] in
+                guard let self, let exported = try? await self.model.export() else { return }
+                do {
+                    // The save panel has already asked before replacing a file.
+                    if FileManager.default.fileExists(atPath: url.path) {
+                        try FileManager.default.removeItem(at: url)
+                    }
+                    try FileManager.default.copyItem(at: exported, to: url)
+                    self.finishSave(url, message: "Saved \(url.lastPathComponent)")
+                } catch {
+                    self.model.statusMessage = "Could not save: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    private func finishSave(_ url: URL, message: String) {
+        model.markSaved()
+        if settings.copyPathMode {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(url.path, forType: .string)
+            HUD.show("Saved, path copied", symbol: "square.and.arrow.down.fill")
+        } else {
+            HUD.show(message, symbol: "square.and.arrow.down.fill")
+        }
+    }
+}

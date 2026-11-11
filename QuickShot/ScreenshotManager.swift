@@ -65,7 +65,7 @@ final class ScreenshotManager {
         defer { overlay = nil }
 
         switch await controller.run() {
-        case .cancelled:
+        case .cancelled, .region:
             throw ScreenshotError.cancelled
         case .area(let image):
             if action == .text {

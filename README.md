@@ -11,6 +11,8 @@ A lightweight macOS menu bar app for capturing, marking up and sharing screensho
 - **Redact.** Cover secrets with an opaque fill, or pixelate them when the shape should stay recognisable.
 - **Zoom.** Fit to window, true size, or step in and out.
 - **Save in one step.** Choose a folder once and **⌘S** saves there without asking. Files never overwrite each other.
+- **Screen recording for quick tutorials.** Record the whole screen or a selected area, with your microphone, system audio and a camera bubble, each optional. A countdown, highlighted clicks and a stop button in the menu bar keep it quick.
+- **Trim and export as MOV or GIF.** Recordings open in a small editor: trim the start and end, drop the sound, and save or copy as a movie or a looping GIF.
 - **Snapshot Collection.** Gather several captures, then copy them together as separate attachments or as one image.
 - **Private by design.** No account, no analytics, no uploads. See [PRIVACY.md](PRIVACY.md).
 
@@ -48,6 +50,8 @@ QuickShot appears as a camera icon in the menu bar.
 - **Capture Selection** lets you drag an area. Press **Space** to switch to picking a window.
 - **Capture Window** starts in window-picking mode.
 - **Capture Text** copies the text in the area you drag over.
+- **Record Screen** and **Record Selection** make a video. See [Recording](#recording).
+- **Microphone**, **System Audio** and **Camera**, under the record commands, choose what goes into the next recording.
 - **Collect Snapshots** keeps captures in the Snapshot Collection instead of the clipboard.
 - **Annotate Before Copying** opens the editor after each capture. Turn it off to copy captures straight to the clipboard.
 - **Settings…** holds the save folder, shortcuts, launch at login and the welcome guide.
@@ -82,6 +86,30 @@ Tool keys work while the canvas has focus; while you type in a label or the desc
 - **Esc never discards work by surprise.** If there is unsaved markup, the first Esc says so and a second one closes the window.
 - **Copy Text** reads the image as it will be exported, so redacted text stays out.
 
+### Recording
+
+1. Choose **Microphone**, **System Audio** and **Camera** in the menu. All three start off, so nothing asks for permission until you turn it on.
+2. Choose **Record Screen** for the display under the pointer, or **Record Selection** to drag an area (press **Space** to pick a window's area instead).
+3. With Camera on, a round camera bubble appears in the bottom-right corner of the area. Drag it anywhere; double-click it to change its size. It is recorded along with the screen.
+4. After a 3-second countdown the menu bar icon turns into a red stop button with the elapsed time. Click it, or press the recording shortcut again, to stop. Before recording starts, the same click cancels.
+
+The recording then opens in the recording editor:
+
+| Control | Action |
+|---|---|
+| Trim (⌘T) | Drag the yellow handles to keep only part of the recording |
+| Sound | Keep or remove the recorded sound (movies only) |
+| MOV / GIF | Export as a QuickTime movie or a looping animated GIF |
+| fps, size | GIF frame rate (5–25) and width (480 px to full size) |
+| Copy (⌘C) | Copy the file to paste into Slack, Mail, Messages and so on |
+| Save (⌘S) / Save As… (⇧⌘S) | Save to the chosen folder / choose where to save |
+| Close (Esc) | Close; asks first if the recording was never copied or saved |
+
+- Movies keep the original video untouched. When both microphone and system audio were recorded, they are mixed into one track, because many players and web apps play only the first.
+- GIFs merge frames that do not change, so a mostly still screen gives a small file.
+- **Settings › Recording** picks the microphone and camera, and turns highlighted clicks and the countdown on or off.
+- Recordings wait in a temporary folder until you copy, save or discard them. Leftovers older than a day are removed at launch.
+
 ### Snapshot Collection
 
 1. Turn on **Collect Snapshots**. The count appears beside the camera.
@@ -95,6 +123,8 @@ Snapshots stay on disk across restarts until you remove them (they go to the Tra
 
 QuickShot needs **Screen & System Audio Recording** permission. The welcome guide asks for it; you can also enable it in **System Settings › Privacy & Security › Screen & System Audio Recording**. If macOS offers **Quit & Reopen**, accept it; the welcome guide returns afterwards. On macOS 15 and later the system periodically asks you to confirm that QuickShot may keep capturing the screen. That reminder comes from macOS and applies to every screenshot app.
 
+Recording with **Microphone** or **Camera** on asks for that permission the first time. Both are off until you turn them on. If you turned one down, the recording does not start and QuickShot offers to open the right page of System Settings.
+
 Launch at login is off until you turn it on.
 
 To keep the permission across rebuilds of the direct build, sign each release with the same identity; macOS treats ad-hoc signed rebuilds as different apps.
@@ -105,7 +135,7 @@ To keep the permission across rebuilds of the direct build, sign each release wi
 bash scripts/validate.sh
 ```
 
-This runs the release-contract tests, the collection, annotation and capture tests, builds the direct app for both architectures, and builds the App Store app ad-hoc signed so the sandbox entitlements that are really in the binary can be checked.
+This runs the release-contract tests, the collection, annotation, capture and recording tests (the recording tests export a synthetic two-audio-track movie as a trimmed MOV and a GIF), builds the direct app for both architectures, and builds the App Store app ad-hoc signed so the sandbox entitlements that are really in the binary can be checked.
 
 ```bash
 bash scripts/live_capture_check.sh
@@ -113,7 +143,7 @@ bash scripts/live_capture_check.sh
 
 This exercises the real capture path (ScreenCaptureKit, the selection overlay, window picking and text capture) with synthesized input. The terminal running it needs Screen Recording permission, and the overlay flashes on screen while it runs. It is not part of CI.
 
-Debug builds accept `--capture-self-test`, which captures every display and writes `QuickShot-capture-self-test.txt` to the temporary directory. The direct build also accepts `--collection-capture-test`, `--editor-smoke-test` and `--capture-full`. None of these exist in the App Store build.
+Debug builds accept `--capture-self-test`, which captures every display and writes `QuickShot-capture-self-test.txt` to the temporary directory. The direct build also accepts `--collection-capture-test`, `--editor-smoke-test`, `--capture-full`, `--record-full` and `--record-selection`, and `--recording-self-test`, which records the display and a region for two seconds each through ScreenCaptureKit, checks their length and pixel size, exports a GIF and a trimmed movie, writes `QuickShot-recording-self-test.txt` to the temporary directory and opens the recording editor. None of these exist in the App Store build.
 
 `xcrun swift scripts/generate_icon.swift QuickShot/Assets.xcassets/AppIcon.appiconset` redraws the app icon at every size.
 
