@@ -136,9 +136,10 @@ struct RecordingTests {
         // ScreenCaptureKit stops adding frames while the screen is still, so the video can
         // end long before the sound. Every exported part must still have a picture.
         let stillSource = folder.appendingPathComponent("still.mov")
-        try await SyntheticRecording.write(to: stillSource, seconds: 2, frameRate: 10, audioTracks: 1, videoFrames: 3)
+        // Seven frames: red until 0.5 s, then green, so the first and last pictures differ.
+        try await SyntheticRecording.write(to: stillSource, seconds: 2, frameRate: 10, audioTracks: 1, videoFrames: 7)
         let stillVideo = try await AVURLAsset(url: stillSource).loadTracks(withMediaType: .video).first!.load(.timeRange).end.seconds
-        precondition(stillVideo < 0.5, "The fixture's video must stop early, ends at \(stillVideo)s")
+        precondition(stillVideo < 0.8, "The fixture's video must stop early, ends at \(stillVideo)s")
         for (label, edit) in [("after the last frame", VideoEdit(start: 1, end: 1.8, includesAudio: true)),
                               ("across the last frame, muted", VideoEdit(start: 0.1, end: 1.5, includesAudio: false))] {
             let output = folder.appendingPathComponent("still-\(UUID().uuidString).mov")
@@ -149,7 +150,7 @@ struct RecordingTests {
             let expected = edit.end - edit.start
             precondition(abs(length - expected) < 0.1 && abs(videoLength - expected) < 0.1,
                          "\(label): movie \(length)s, video \(videoLength)s, expected \(expected)s")
-            // The held picture really is there: near the end, the fixture's last frame (red).
+            // The held picture really is there: near the end, the fixture's last frame (green), not its first (red).
             let generator = AVAssetImageGenerator(asset: exported)
             generator.requestedTimeToleranceBefore = .zero
             generator.requestedTimeToleranceAfter = .zero
@@ -157,7 +158,7 @@ struct RecordingTests {
             // A held frame reports the time it starts showing, so only the picture is checked.
             let frame = try await generator.image(at: requested).image
             let pixel = centrePixel(frame)
-            precondition(pixel.red > 170 && pixel.green < 90 && pixel.blue < 90, "\(label): held frame is not the last picture: \(pixel)")
+            precondition(pixel.green > 130 && pixel.red < 90 && pixel.blue < 110, "\(label): held frame is not the last picture: \(pixel)")
         }
         let stillGIF = folder.appendingPathComponent("still.gif")
         try await VideoExporter.exportGIF(from: stillSource, start: 1, end: 1.5, frameRate: 10, maxWidth: 160, to: stillGIF)

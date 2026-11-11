@@ -175,7 +175,10 @@ nonisolated enum VideoExporter {
         let range = try await timeRange(of: asset, start: start, end: end)
         guard let track = try await asset.loadTracks(withMediaType: .video).first else { throw VideoExportError.noVideo }
         // Past the video's last frame the screen was still, so the last frame is what was shown.
-        let lastFrameTime = try await track.load(.timeRange).end.seconds - 0.001
+        // Before the first frame, the first frame is the nearest picture.
+        let videoSpan = try await track.load(.timeRange)
+        let firstFrameTime = videoSpan.start.seconds
+        let lastFrameTime = max(firstFrameTime, videoSpan.end.seconds - 0.001)
         let natural = try await track.load(.naturalSize).applying(track.load(.preferredTransform))
         let size = RecordingGeometry.gifSize(natural: CGSize(width: abs(natural.width), height: abs(natural.height)), maxWidth: maxWidth)
         let times = RecordingGeometry.frameTimes(start: range.start.seconds, duration: range.duration.seconds, frameRate: frameRate)
@@ -215,7 +218,7 @@ nonisolated enum VideoExporter {
             try Task.checkCancellation()
             let image: CGImage
             do {
-                image = try await generator.image(at: CMTime(seconds: min(seconds, lastFrameTime), preferredTimescale: 6_000)).image
+                image = try await generator.image(at: CMTime(seconds: min(max(seconds, firstFrameTime), lastFrameTime), preferredTimescale: 6_000)).image
             } catch {
                 throw VideoExportError.failed(error.localizedDescription)
             }

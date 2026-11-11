@@ -114,6 +114,7 @@ final class RecordingController {
         try checkCancelled()
         // Let the countdown leave the screen before the first frame.
         try? await Task.sleep(nanoseconds: 120_000_000)
+        try checkCancelled()
 
         try FileManager.default.createDirectory(at: Self.recordingsFolder, withIntermediateDirectories: true)
         let url = AppSettings.uniqueFileURL(in: Self.recordingsFolder, base: AppSettings.recordingBaseName(), fileExtension: "mov")

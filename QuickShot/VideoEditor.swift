@@ -136,14 +136,14 @@ final class VideoEditorModel: ObservableObject {
         }
 
         let folder = RecordingController.recordingsFolder.appendingPathComponent("Exports/\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        exportFolders.append(folder)
         let destination = folder.appendingPathComponent(baseName).appendingPathExtension(format.fileExtension)
 
         progress = format == .gif ? 0 : nil
         statusMessage = format == .gif ? "Making GIF…" : "Exporting movie…"
         defer { progress = nil }
         do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            exportFolders.append(folder)
             switch format {
             case .mov:
                 try await VideoExporter.exportMovie(from: sourceURL, edit: edit, to: destination)
@@ -375,6 +375,8 @@ final class VideoEditorWindowController: NSWindowController, NSWindowDelegate {
     }
 
     var hasUnsavedRecording: Bool { model.hasUnsavedChanges }
+    /// A Copy or Save is still running.
+    var isBusy: Bool { model.isBusy }
 
     /// Closes without asking; used once the user has agreed to discard, for example at Quit.
     func discardAndClose() {

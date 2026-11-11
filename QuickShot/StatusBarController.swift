@@ -416,6 +416,16 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     /// Quitting skips each window's own close check, so a recording in progress and
     /// unsaved recordings are offered here instead: discard them and quit, or keep working.
     func shouldTerminate() -> NSApplication.TerminateReply {
+        // A copy or save in progress is never cut off, even for a recording already saved once.
+        if videoEditors.contains(where: \.isBusy) {
+            let alert = NSAlert()
+            alert.messageText = "QuickShot is still saving a recording."
+            alert.informativeText = "Quit again when the copy or save has finished."
+            alert.addButton(withTitle: "OK")
+            NSApp.activate(ignoringOtherApps: true)
+            alert.runModal()
+            return .terminateCancel
+        }
         let recording = !recordingController.isIdle
         let unsaved = videoEditors.filter(\.hasUnsavedRecording)
         guard recording || !unsaved.isEmpty else { return .terminateNow }
