@@ -6,6 +6,7 @@ A lightweight macOS menu bar app for capturing, marking up and sharing screensho
 
 - **Capture from anywhere.** Global keyboard shortcuts for full screen, selection, window and text capture. You choose them; nothing is registered until you accept the suggestions in the welcome guide.
 - **Frozen-screen selection.** The screen freezes the moment you start, so open menus and hover states stay put. A crosshair and a live pixel readout help you select exactly. Press **Space** to pick a window instead, **Esc** to cancel.
+- **Capture open menus.** Clicking QuickShot closes a drop-down menu in another app, so use a shortcut while the menu is open, or choose **Timed Capture** and open the menu during the 3, 5 or 10 second countdown shown in the menu bar.
 - **Capture Text.** Drag over any area to copy its text, or the contents of a QR code, to the clipboard. Recognition runs on your Mac.
 - **Markup editor.** Rectangle, arrow, line, polyline, highlight, text and redact tools, each with a one-key shortcut. Type labels directly on the image. Every tool remembers its own colour and style.
 - **Redact.** Cover secrets with an opaque fill, or pixelate them when the shape should stay recognisable.
@@ -50,6 +51,7 @@ QuickShot appears as a camera icon in the menu bar.
 - **Capture Selection** lets you drag an area. Press **Space** to switch to picking a window.
 - **Capture Window** starts in window-picking mode.
 - **Capture Text** copies the text in the area you drag over.
+- **Timed Capture** waits a few seconds before a selection or full screen capture, so you can open the menu you want to capture. The countdown appears next to the menu bar icon; click the icon to cancel. Choose 3, 5 or 10 seconds in the same submenu.
 - **Record Screen** and **Record Selection** make a video. See [Recording](#recording).
 - **Microphone**, **System Audio** and **Camera**, under the record commands, choose what goes into the next recording.
 - **Collect Snapshots** keeps captures in the Snapshot Collection instead of the clipboard.

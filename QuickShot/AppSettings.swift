@@ -31,6 +31,7 @@ final class AppSettings: ObservableObject {
         static let videoFormat = "videoExportFormat"
         static let gifFrameRate = "gifFrameRate"
         static let gifMaxWidth = "gifMaxWidth"
+        static let captureDelay = "captureDelay"
     }
 
     private let defaults: UserDefaults
@@ -67,6 +68,8 @@ final class AppSettings: ObservableObject {
     @Published var gifFrameRate: Int { didSet { defaults.set(gifFrameRate, forKey: Key.gifFrameRate) } }
     /// Zero keeps the recording's own width.
     @Published var gifMaxWidth: Int { didSet { defaults.set(gifMaxWidth, forKey: Key.gifMaxWidth) } }
+    /// Seconds a timed capture waits, so the user can open a menu first.
+    @Published var captureDelay: Int { didSet { defaults.set(captureDelay, forKey: Key.captureDelay) } }
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -88,6 +91,8 @@ final class AppSettings: ObservableObject {
             ? defaults.integer(forKey: Key.gifFrameRate) : GIFOptions.defaultFrameRate
         gifMaxWidth = defaults.object(forKey: Key.gifMaxWidth) == nil || !GIFOptions.widths.contains(defaults.integer(forKey: Key.gifMaxWidth))
             ? GIFOptions.defaultWidth : defaults.integer(forKey: Key.gifMaxWidth)
+        captureDelay = TimedCapture.delays.contains(defaults.integer(forKey: Key.captureDelay))
+            ? defaults.integer(forKey: Key.captureDelay) : TimedCapture.defaultDelay
         saveFolderURL = nil
         migrateLegacySaveFolder()
         saveFolderURL = resolveSaveFolder()?.url

@@ -98,6 +98,16 @@ struct CaptureTests {
         reloaded.setShortcut(nil, for: .window)
         precondition(AppSettings(defaults: defaults).shortcuts.isEmpty)
 
+        // A timed capture waits five seconds until the user picks another offered delay.
+        precondition(reloaded.captureDelay == TimedCapture.defaultDelay && TimedCapture.delays.contains(TimedCapture.defaultDelay))
+        reloaded.captureDelay = 10
+        precondition(AppSettings(defaults: defaults).captureDelay == 10)
+        defaults.set(7, forKey: "captureDelay")
+        precondition(AppSettings(defaults: defaults).captureDelay == TimedCapture.defaultDelay, "A delay the menu does not offer falls back")
+        precondition(TimedCapture.title(for: .selection, delay: 3) == "Selection in 3 Seconds")
+        precondition(TimedCapture.title(for: .fullScreen, delay: 10) == "Full Screen in 10 Seconds")
+        precondition(!TimedCapture.actions.contains(.window), "Window capture leaves out menus, so it is not offered")
+
         // Quick save writes inside the chosen folder and never replaces a file.
         let first = AppSettings.uniqueFileURL(in: folder, base: "Screenshot_test")
         precondition(first.lastPathComponent == "Screenshot_test.png")
