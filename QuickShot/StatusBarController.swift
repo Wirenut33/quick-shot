@@ -31,6 +31,9 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private lazy var recordingController = RecordingController(settings: settings)
     private var recordingTimer: Timer?
     private var isCapturing = false
+    /// Set from the moment a recording is requested until its start finishes, so a
+    /// capture cannot slip in before the recorder leaves its idle state.
+    private var isStartingRecording = false
     private var isMenuOpen = false
     private var isRecordingShortcut = false
     private var iconReset: DispatchWorkItem?
@@ -347,11 +350,13 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         case .finishing:
             return
         case .idle:
-            guard !isCapturing else { return }
+            guard !isCapturing, !isStartingRecording else { return }
+            isStartingRecording = true
             collectionWindow?.window?.orderOut(nil)
             HUD.dismiss()
             Task { @MainActor [weak self] in
                 guard let self else { return }
+                defer { self.isStartingRecording = false }
                 do {
                     // Let the menu finish closing so it is not in the first frame.
                     try await self.recordingController.start(action, after: afterMenu ? 0.25 : 0)
@@ -533,7 +538,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     /// A shortcut pressed twice, or pressed while the menu item is also firing, must
     /// start only one capture. Screenshots wait until a recording has ended.
     private func beginCapture() -> Bool {
-        guard !isCapturing, recordingController.isIdle else { return false }
+        guard !isCapturing, !isStartingRecording, recordingController.isIdle else { return false }
         isCapturing = true
         refreshMenuState()
         collectionWindow?.window?.orderOut(nil)
@@ -590,6 +595,11 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     private func endCountdown() {
+        // A recording owns the menu bar button while it runs; leave its stop control alone.
+        guard recordingController.isIdle else {
+            recordingStateChanged()
+            return
+        }
         statusItem.menu = createMenuIfNeeded()
         statusItem.button?.action = nil
         statusItem.button?.target = nil
