@@ -39,6 +39,11 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private var observers: Set<AnyCancellable> = []
 
     private var captureItems: [CaptureAction: NSMenuItem] = [:]
+    private var timedCaptureItem: NSMenuItem!
+    private var timedCaptureItems: [CaptureAction: NSMenuItem] = [:]
+    private var delayItems: [NSMenuItem] = []
+    /// Counts down a timed capture in the menu bar. Nil when none is waiting.
+    private var countdownTask: Task<Void, Never>?
     private var collectionToggle: NSMenuItem!
     private var collectionItem: NSMenuItem!
     private var copyCollectionItem: NSMenuItem!
@@ -110,6 +115,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             let item = menuItem(title: action.title, action: selector)
             captureItems[action] = item
             menu.addItem(item)
+            if action == .text { menu.addItem(createTimedCaptureItem()) }
         }
         microphoneToggle = menuItem(title: "Microphone", action: #selector(toggleMicrophone))
         systemAudioToggle = menuItem(title: "System Audio", action: #selector(toggleSystemAudio))
@@ -147,6 +153,38 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         return menu
     }
 
+    /// Clicking QuickShot closes any menu open in another app, so these wait a few
+    /// seconds before freezing the screen, which leaves time to open it again.
+    private func createTimedCaptureItem() -> NSMenuItem {
+        let submenu = NSMenu()
+        submenu.autoenablesItems = false
+        let selectors: [CaptureAction: Selector] = [
+            .selection: #selector(timedCaptureSelection),
+            .fullScreen: #selector(timedCaptureFullScreen)
+        ]
+        for action in TimedCapture.actions {
+            guard let selector = selectors[action] else { continue }
+            let item = menuItem(title: TimedCapture.title(for: action, delay: settings.captureDelay), action: selector)
+            timedCaptureItems[action] = item
+            submenu.addItem(item)
+        }
+        submenu.addItem(.separator())
+        let header = NSMenuItem(title: "Delay", action: nil, keyEquivalent: "")
+        header.isEnabled = false
+        submenu.addItem(header)
+        delayItems = TimedCapture.delays.map { seconds in
+            let item = menuItem(title: "\(seconds) Seconds", action: #selector(chooseCaptureDelay(_:)))
+            item.tag = seconds
+            item.indentationLevel = 1
+            submenu.addItem(item)
+            return item
+        }
+        let item = NSMenuItem(title: "Timed Capture", action: nil, keyEquivalent: "")
+        item.submenu = submenu
+        timedCaptureItem = item
+        return item
+    }
+
     private func menuItem(title: String, action: Selector, keyEquivalent: String = "") -> NSMenuItem {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: keyEquivalent)
         item.target = self
@@ -169,10 +207,18 @@ final class StatusBarController: NSObject, NSMenuDelegate {
                 item.keyEquivalentModifierMask = []
             }
         }
+        timedCaptureItem?.isEnabled = !isCapturing && recordingController.isIdle
+        for (action, item) in timedCaptureItems {
+            item.title = TimedCapture.title(for: action, delay: settings.captureDelay)
+        }
+        for item in delayItems {
+            item.state = item.tag == settings.captureDelay ? .on : .off
+        }
         collectionToggle?.state = settings.collectMode ? .on : .off
         collectionItem?.title = "Snapshot Collection (\(collection.snapshots.count))…"
         copyCollectionItem?.isEnabled = !collection.snapshots.isEmpty
-        if recordingController.isIdle {
+        // A recording or a timed capture shows its own time in the title.
+        if recordingController.isIdle, countdownTask == nil {
             statusItem.button?.title = settings.collectMode ? " \(collection.snapshots.count)" : ""
         }
         annotationToggle?.state = settings.annotateMode ? .on : .off
@@ -280,6 +326,10 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     @objc private func captureText() { capture(.text, afterMenu: true) }
     @objc private func recordScreen() { capture(.recordScreen, afterMenu: true) }
     @objc private func recordSelection() { capture(.recordSelection, afterMenu: true) }
+
+    @objc private func timedCaptureSelection() { startTimedCapture(.selection) }
+    @objc private func timedCaptureFullScreen() { startTimedCapture(.fullScreen) }
+    @objc private func chooseCaptureDelay(_ sender: NSMenuItem) { settings.captureDelay = sender.tag }
 
     @objc private func toggleMicrophone() { settings.recordMicrophone.toggle() }
     @objc private func toggleSystemAudio() { settings.recordSystemAudio.toggle() }
@@ -472,27 +522,81 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             toggleRecording(action, afterMenu: afterMenu)
             return
         }
-        // A shortcut pressed twice, or pressed while the menu item is also firing, must
-        // start only one capture. Screenshots wait until a recording has ended.
-        guard !isCapturing, recordingController.isIdle else { return }
+        guard beginCapture() else { return }
+        Task { @MainActor [weak self] in
+            // Let the menu finish closing so it is not part of the frozen frame.
+            if afterMenu { try? await Task.sleep(nanoseconds: 250_000_000) }
+            await self?.runCapture(action)
+        }
+    }
+
+    /// A shortcut pressed twice, or pressed while the menu item is also firing, must
+    /// start only one capture. Screenshots wait until a recording has ended.
+    private func beginCapture() -> Bool {
+        guard !isCapturing, recordingController.isIdle else { return false }
         isCapturing = true
         refreshMenuState()
         collectionWindow?.window?.orderOut(nil)
         HUD.dismiss()
-        Task { @MainActor [weak self] in
-            // Let the menu finish closing so it is not part of the frozen frame.
-            if afterMenu { try? await Task.sleep(nanoseconds: 250_000_000) }
-            guard let self else { return }
-            let result: Result<CaptureOutput, Error>
-            do {
-                result = .success(try await self.screenshotManager.capture(action))
-            } catch {
-                result = .failure(error)
-            }
-            self.isCapturing = false
-            self.refreshMenuState()
-            self.handle(result)
+        return true
+    }
+
+    private func runCapture(_ action: CaptureAction) async {
+        let result: Result<CaptureOutput, Error>
+        do {
+            result = .success(try await screenshotManager.capture(action))
+        } catch {
+            result = .failure(error)
         }
+        isCapturing = false
+        refreshMenuState()
+        handle(result)
+    }
+
+    // MARK: Timed capture
+
+    /// Counts down in the menu bar, then freezes the screen as it is, open menus and all.
+    /// A click on the icon during the countdown cancels; it never opens QuickShot's menu,
+    /// which would close the menu the user is waiting to capture.
+    private func startTimedCapture(_ action: CaptureAction) {
+        guard beginCapture() else { return }
+        let delay = settings.captureDelay
+        iconReset?.cancel()
+        statusItem.menu = nil
+        statusItem.button?.target = self
+        statusItem.button?.action = #selector(cancelTimedCapture)
+        setStatusIcon(symbolName: "timer", description: "Timed capture")
+        statusItem.button?.toolTip = "Cancel timed capture"
+        countdownTask = Task { @MainActor [weak self] in
+            for remaining in stride(from: delay, to: 0, by: -1) {
+                self?.statusItem.button?.title = " \(remaining)"
+                do { try await Task.sleep(nanoseconds: 1_000_000_000) } catch { return }
+            }
+            guard let self, !Task.isCancelled else { return }
+            self.countdownTask = nil
+            self.endCountdown()
+            // Let the menu bar redraw its usual icon before the screen freezes.
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            await self.runCapture(action)
+        }
+    }
+
+    @objc private func cancelTimedCapture() {
+        guard let countdownTask else { return }
+        countdownTask.cancel()
+        self.countdownTask = nil
+        isCapturing = false
+        endCountdown()
+    }
+
+    private func endCountdown() {
+        statusItem.menu = createMenuIfNeeded()
+        statusItem.button?.action = nil
+        statusItem.button?.target = nil
+        statusItem.button?.toolTip = nil
+        setStatusIcon(symbolName: "camera.viewfinder", description: "QuickShot")
+        // Restores the collection count in place of the countdown.
+        refreshMenuState()
     }
 
     private func handle(_ result: Result<CaptureOutput, Error>) {

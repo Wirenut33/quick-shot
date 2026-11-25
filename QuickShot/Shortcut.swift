@@ -7,6 +7,20 @@ import AppKit
 import Carbon.HIToolbox
 
 /// A capture command the user can run from the menu or a global shortcut.
+/// A capture that starts after a short wait. Clicking QuickShot's menu closes any menu
+/// that is open in another app, so the wait gives the user time to open it again.
+enum TimedCapture {
+    static let delays = [3, 5, 10]
+    static let defaultDelay = 5
+    /// Only these freeze the whole screen. A window capture leaves out menus.
+    static let actions: [CaptureAction] = [.selection, .fullScreen]
+
+    static func title(for action: CaptureAction, delay: Int) -> String {
+        let subject = action == .fullScreen ? "Full Screen" : "Selection"
+        return "\(subject) in \(delay) Seconds"
+    }
+}
+
 enum CaptureAction: String, CaseIterable, Identifiable, Codable {
     case fullScreen, selection, window, text, recordScreen, recordSelection
 
